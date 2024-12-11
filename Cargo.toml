@@ -1,0 +1,10 @@
+[package]
+name = "schmu"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.94"
+dirs = "5.0.1"
+log = "0.4.22"
+raylib = "5.0.2"
