@@ -110,29 +110,36 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
 
             d.draw_text_ex(
                 &font_regular,
-                song.title(),
+                &song.title,
                 rvec2(160, y + 2.0),
                 FONT_SIZE_REGULAR as f32,
                 0.0,
                 Color::GAINSBORO,
             );
 
-            if !song.downloaded() {
+            if !song.downloaded {
                 let rotation = ((time % 1.0) * 360.0) as f32;
                 let texture_rect = rrect(0, 0, spinner.width(), spinner.height());
                 let output_rect = rrect(168, y + 34.0, 16, 16);
                 let origin = rvec2(8, 8);
-                d.draw_texture_pro(&spinner, texture_rect, output_rect, origin, rotation, Color::GRAY);
+                d.draw_texture_pro(
+                    &spinner,
+                    texture_rect,
+                    output_rect,
+                    origin,
+                    rotation,
+                    Color::GRAY,
+                );
             }
 
-            let offset = match song.downloaded() {
+            let offset = match song.downloaded {
                 true => 0.0,
                 false => 22.0,
             };
 
             d.draw_text_ex(
                 &font_bold,
-                song.artist(),
+                &song.artist,
                 rvec2(160.0 + offset, y + 26.0),
                 FONT_SIZE_BOLD as f32,
                 0.0,

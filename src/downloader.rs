@@ -6,6 +6,11 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
+use reqwest::blocking::Client;
+use serde::Deserialize;
+
+use crate::state::{self, Song};
+
 pub struct Downloader {
     tx: Sender<DownloaderMessage>,
 }
@@ -85,6 +90,33 @@ fn downloader_thread(rx: Receiver<DownloaderMessage>) {
             continue;
         }
 
+        log::info!("feching info for {}", entry.id);
+        let song_info = match fetch_song_info(&entry.id) {
+            Ok(song_info) => song_info,
+            Err(e) => {
+                log::error!("{} failed to fetch song info: {e}", entry.id);
+                match entry.tries_left {
+                    0 => log::warn!("skipping download of {} due to excessive errors", entry.id),
+                    tries_left => queue.push_front(DownloadEntry {
+                        id: entry.id,
+                        tries_left: tries_left - 1,
+                    }),
+                }
+                continue 'outer;
+            }
+        };
+        log::info!(
+            "song info for {}: {} / {}",
+            entry.id,
+            song_info.title,
+            song_info.artist
+        );
+
+        {
+            let mut state = state::get();
+            state.enqueue(song_info);
+        }
+
         log::info!("downloading {}", entry.id);
         let mut command = Command::new("yt-dlp");
         let command = command
@@ -158,6 +190,24 @@ fn downloader_thread(rx: Receiver<DownloaderMessage>) {
     }
 }
 
+fn fetch_song_info(id: &str) -> Result<Song, reqwest::Error> {
+    let client = Client::new();
+    let request_url = format!(
+        "https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v={id}"
+    );
+    let response = client
+        .get(request_url)
+        .send()?
+        .json::<YoutubeVideoResponse>()?;
+
+    Ok(Song {
+        id: id.to_owned(),
+        title: response.title,
+        artist: response.author_name,
+        downloaded: false,
+    })
+}
+
 fn get_cache_location(id: &str) -> PathBuf {
     let mut cache = dirs::cache_dir().unwrap();
     cache.push(&format!("schmu/{id}.m4a"));
@@ -166,4 +216,10 @@ fn get_cache_location(id: &str) -> PathBuf {
 
 fn get_youtube_url(id: &str) -> String {
     format!("https://music.youtube.com/watch?v={id}")
+}
+
+#[derive(Deserialize)]
+struct YoutubeVideoResponse {
+    author_name: String,
+    title: String,
 }
