@@ -1,41 +1,46 @@
 use std::collections::VecDeque;
+use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
 
+use anyhow::Result;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 
 use crate::state::{self, Song};
 
+/* public api *************************************************************************************/
+
 pub struct Downloader {
-    tx: Sender<DownloaderMessage>,
+    info_tx: Sender<Message>,
 }
 
 impl Downloader {
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel();
+        let (info_tx, info_rx) = mpsc::channel();
+        let (audio_tx, audio_rx) = mpsc::channel();
 
         log::info!("starting downloader");
-        _ = thread::spawn(move || downloader_thread(rx));
+        _ = thread::spawn(move || InfoDownloaderThread::run(info_rx, audio_tx));
+        _ = thread::spawn(move || AudioDownloaderThread::run(audio_rx));
 
-        Self { tx }
+        Self { info_tx }
     }
 
     pub fn enqueue(&self, id: &str) {
         log::info!("enqueueing download for {id}");
         let id = id.to_owned();
-        let msg = DownloaderMessage::Download { id };
-        self.tx.send(msg).unwrap();
+        let msg = Message::Download { id };
+        self.info_tx.send(msg).unwrap();
     }
 
     fn quit(&self) {
         log::info!("terminating downloader");
-        let msg = DownloaderMessage::Quit;
-        self.tx.send(msg).unwrap();
+        let msg = Message::Quit;
+        self.info_tx.send(msg).unwrap();
     }
 }
 
@@ -45,7 +50,254 @@ impl Drop for Downloader {
     }
 }
 
-enum DownloaderMessage {
+/* song info downloader ***************************************************************************/
+
+struct InfoDownloaderThread {
+    info_rx: Receiver<Message>,
+    audio_tx: Sender<Message>,
+    queue: VecDeque<DownloadEntry>,
+}
+
+impl InfoDownloaderThread {
+    const DOWNLOAD_ATTEMPTS: usize = 3;
+
+    fn run(info_rx: Receiver<Message>, audio_tx: Sender<Message>) {
+        let mut downloader = Self {
+            info_rx,
+            audio_tx,
+            queue: VecDeque::new(),
+        };
+
+        while downloader.run_iter() {}
+    }
+
+    fn run_iter(&mut self) -> bool {
+        if self.queue.is_empty() {
+            match self.info_rx.recv().unwrap() {
+                Message::Download { id } => self.enqueue(id),
+                Message::Quit => return false,
+            }
+        }
+
+        while let Ok(message) = self.info_rx.try_recv() {
+            match message {
+                Message::Download { id } => self.enqueue(id),
+                Message::Quit => return false,
+            }
+        }
+
+        let entry = self.dequeue().unwrap();
+        if entry.is_cached() {
+            log::info!("file {} in cache, skipping download", entry.id);
+            match self.add_to_state_queue_from_cache(&entry) {
+                Ok(()) => return true,
+                Err(e) => log::error!("failed to read song info of {} from cache: {e}", entry.id),
+            }
+        }
+
+        let song_info = match self.fetch_song_info(&entry.id) {
+            Ok(song_info) => song_info,
+            Err(e) => {
+                log::error!("failed to fetch song info for {}: {e}", entry.id);
+                self.requeue(entry);
+                return true;
+            }
+        };
+
+        if let Err(e) = self.save_to_cache(&entry, &song_info) {
+            log::warn!("failed to save song info for {} to cache: {e}", entry.id);
+        };
+
+        self.add_to_state_queue(song_info);
+        self.audio_tx.send(Message::Download { id: entry.id }).unwrap();
+
+        true
+    }
+
+    fn enqueue(&mut self, id: String) {
+        self.queue.push_back(DownloadEntry {
+            id,
+            tries_left: Self::DOWNLOAD_ATTEMPTS,
+        });
+    }
+
+    fn dequeue(&mut self) -> Option<DownloadEntry> {
+        self.queue.pop_front()
+    }
+
+    fn requeue(&mut self, entry: DownloadEntry) {
+        match entry.tries_left {
+            0 => log::warn!("skipping download of {} due to excessive errors", entry.id),
+            tries_left => self.queue.push_front(DownloadEntry {
+                id: entry.id,
+                tries_left: tries_left - 1,
+            }),
+        }
+    }
+
+    fn fetch_song_info(&self, id: &str) -> Result<Song, reqwest::Error> {
+        log::info!("fetching song info for {id}");
+
+        let client = Client::new();
+        let request_url = format!(
+            "https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v={id}"
+        );
+        let response = client
+            .get(request_url)
+            .send()?
+            .json::<YoutubeVideoResponse>()?;
+
+        log::info!("got song info for {id}: {} / {}", response.title, response.author_name);
+
+        Ok(Song {
+            id: id.to_owned(),
+            title: response.title,
+            artist: response.author_name,
+            downloaded: false,
+        })
+    }
+
+    fn add_to_state_queue(&self, song_info: Song) {
+        let mut state = state::get();
+        state.enqueue(song_info);
+    }
+
+    fn add_to_state_queue_from_cache(&self, entry: &DownloadEntry) -> Result<()> {
+        let path = entry.song_info_cache_location();
+        let data = fs::read(path)?;
+        let mut song_info = serde_json::from_slice::<Song>(&data)?;
+        song_info.downloaded = true; // ok because if song is not downloaded, we re-fetch the song info
+        self.add_to_state_queue(song_info);
+        Ok(())
+    }
+
+    fn save_to_cache(&self, entry: &DownloadEntry, song_info: &Song) -> Result<()> {
+        let path = entry.song_info_cache_location();
+        let data = serde_json::to_vec(song_info)?;
+        fs::create_dir_all(path.parent().unwrap())?;
+        fs::write(path, data)?;
+        Ok(())
+    }
+}
+
+#[derive(Deserialize)]
+struct YoutubeVideoResponse {
+    author_name: String,
+    title: String,
+}
+
+/* audio downloader *******************************************************************************/
+
+struct AudioDownloaderThread {
+    rx: Receiver<Message>,
+    queue: VecDeque<DownloadEntry>,
+}
+
+impl AudioDownloaderThread {
+    const DOWNLOAD_ATTEMPTS: usize = 3;
+
+    fn run(rx: Receiver<Message>) {
+        let mut downloader = Self {
+            rx,
+            queue: VecDeque::new(),
+        };
+
+        while downloader.run_iter() {}
+    }
+
+    fn run_iter(&mut self) -> bool {
+        if self.queue.is_empty() {
+            match self.rx.recv().unwrap() {
+                Message::Download { id } => self.enqueue(id),
+                Message::Quit => return false,
+            }
+        }
+
+        while let Ok(message) = self.rx.try_recv() {
+            match message {
+                Message::Download { id } => self.enqueue(id),
+                Message::Quit => return false,
+            }
+        }
+
+        let entry = self.dequeue().unwrap();
+        if entry.is_cached() {
+            log::info!("file {} in cache, skipping download", entry.id);
+            return true;
+        }
+
+        self.download(entry);
+
+        true
+    }
+
+    fn enqueue(&mut self, id: String) {
+        self.queue.push_back(DownloadEntry {
+            id,
+            tries_left: Self::DOWNLOAD_ATTEMPTS,
+        });
+    }
+
+    fn dequeue(&mut self) -> Option<DownloadEntry> {
+        self.queue.pop_front()
+    }
+
+    fn requeue(&mut self, entry: DownloadEntry) {
+        match entry.tries_left {
+            0 => log::warn!("skipping download of {} due to excessive errors", entry.id),
+            tries_left => self.queue.push_front(DownloadEntry {
+                id: entry.id,
+                tries_left: tries_left - 1,
+            }),
+        }
+    }
+
+    fn download(&mut self, entry: DownloadEntry) {
+        log::info!("downloading {}", entry.id);
+
+        let mut command = Command::new("yt-dlp");
+        let command = command
+            .arg("--format")
+            .arg("bestaudio[ext=m4a]")
+            .arg("--extract-audio")
+            .arg("--output")
+            .arg(&entry.audio_cache_location())
+            .arg(&entry.youtube_url())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped());
+
+        log::info!("executing {command:?}");
+        let mut command = command.spawn().unwrap();
+
+        match command.wait() {
+            Ok(status) if status.success() => {
+                log::info!("{} downloaded successfully", entry.id);
+                let mut state = state::get();
+                state.mark_downloaded(&entry.id);
+            },
+            Ok(status) => self.download_failed(entry, status, &mut command),
+            Err(e) => {
+                log::error!("failed to wait on command: {e}");
+                self.requeue(entry);
+            }
+        }
+    }
+
+    fn download_failed(&mut self, entry: DownloadEntry, status: ExitStatus, command: &mut Child) {
+        log::error!("{} failed to download with exit code {status}, stderr:", entry.id);
+        let stderr = command.stderr.take().unwrap();
+        let stderr = BufReader::new(stderr);
+        for line in stderr.lines() {
+            log::error!(" | {}", line.unwrap());
+        }
+        self.requeue(entry);
+    }
+}
+
+/* utilities **************************************************************************************/
+
+enum Message {
     Download { id: String },
     Quit,
 }
@@ -55,171 +307,24 @@ struct DownloadEntry {
     tries_left: usize,
 }
 
-impl From<String> for DownloadEntry {
-    fn from(value: String) -> Self {
-        Self {
-            id: value,
-            tries_left: 5,
-        }
+impl DownloadEntry {
+    fn audio_cache_location(&self) -> PathBuf {
+        let mut cache = dirs::cache_dir().unwrap();
+        cache.push(&format!("schmu/{}.m4a", self.id));
+        cache
     }
-}
 
-fn downloader_thread(rx: Receiver<DownloaderMessage>) {
-    let mut queue = VecDeque::<DownloadEntry>::new();
-
-    'outer: loop {
-        if queue.is_empty() {
-            match rx.recv().unwrap() {
-                DownloaderMessage::Download { id } => queue.push_back(id.into()),
-                DownloaderMessage::Quit => break,
-            }
-        }
-
-        while let Ok(message) = rx.try_recv() {
-            match message {
-                DownloaderMessage::Download { id } => queue.push_back(id.into()),
-                DownloaderMessage::Quit => break,
-            }
-        }
-
-        let entry = queue.pop_front().unwrap();
-        let url = get_youtube_url(&entry.id);
-        let cache_file = get_cache_location(&entry.id);
-        if cache_file.exists() {
-            log::info!("file {} in cache, skipping download", entry.id);
-            continue;
-        }
-
-        log::info!("feching info for {}", entry.id);
-        let song_info = match fetch_song_info(&entry.id) {
-            Ok(song_info) => song_info,
-            Err(e) => {
-                log::error!("{} failed to fetch song info: {e}", entry.id);
-                match entry.tries_left {
-                    0 => log::warn!("skipping download of {} due to excessive errors", entry.id),
-                    tries_left => queue.push_front(DownloadEntry {
-                        id: entry.id,
-                        tries_left: tries_left - 1,
-                    }),
-                }
-                continue 'outer;
-            }
-        };
-        log::info!(
-            "song info for {}: {} / {}",
-            entry.id,
-            song_info.title,
-            song_info.artist
-        );
-
-        {
-            let mut state = state::get();
-            state.enqueue(song_info);
-        }
-
-        log::info!("downloading {}", entry.id);
-        let mut command = Command::new("yt-dlp");
-        let command = command
-            .arg("--format")
-            .arg("bestaudio[ext=m4a]")
-            .arg("--extract-audio")
-            .arg("--output")
-            .arg(&cache_file)
-            .arg(&url)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped());
-        log::info!("executing {command:?}");
-        let mut command = command.spawn().unwrap();
-
-        loop {
-            match command.try_wait() {
-                Ok(Some(status)) => {
-                    if status.success() {
-                        log::info!("{} downloaded successfully", entry.id);
-                    } else {
-                        log::error!(
-                            "{} failed to download with exit code {status}, stderr:",
-                            entry.id
-                        );
-                        let stderr = command.stderr.take().unwrap();
-                        let stderr = BufReader::new(stderr);
-                        for line in stderr.lines() {
-                            log::error!(" | {}", line.unwrap());
-                        }
-                        match entry.tries_left {
-                            0 => log::warn!(
-                                "skipping download of {} due to excessive errors",
-                                entry.id
-                            ),
-                            tries_left => queue.push_front(DownloadEntry {
-                                id: entry.id,
-                                tries_left: tries_left - 1,
-                            }),
-                        }
-                    }
-                    continue 'outer;
-                }
-                Ok(None) => {
-                    while let Ok(message) = rx.try_recv() {
-                        match message {
-                            DownloaderMessage::Download { id } => queue.push_back(id.into()),
-                            DownloaderMessage::Quit => {
-                                command.kill().unwrap();
-                                break 'outer;
-                            }
-                        }
-                    }
-                    thread::sleep(Duration::from_millis(50));
-                }
-                Err(e) => {
-                    log::error!("failed to wait on command: {e}");
-                    match entry.tries_left {
-                        0 => {
-                            log::warn!("skipping download of {} due to excessive errors", entry.id)
-                        }
-                        tries_left => queue.push_front(DownloadEntry {
-                            id: entry.id,
-                            tries_left: tries_left - 1,
-                        }),
-                    }
-                    continue 'outer;
-                }
-            }
-        }
+    fn song_info_cache_location(&self) -> PathBuf {
+        let mut cache = dirs::cache_dir().unwrap();
+        cache.push(&format!("schmu/{}.json", self.id));
+        cache
     }
-}
 
-fn fetch_song_info(id: &str) -> Result<Song, reqwest::Error> {
-    let client = Client::new();
-    let request_url = format!(
-        "https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v={id}"
-    );
-    let response = client
-        .get(request_url)
-        .send()?
-        .json::<YoutubeVideoResponse>()?;
+    fn is_cached(&self) -> bool {
+        self.audio_cache_location().exists()
+    }
 
-    Ok(Song {
-        id: id.to_owned(),
-        title: response.title,
-        artist: response.author_name,
-        downloaded: false,
-    })
-}
-
-fn get_cache_location(id: &str) -> PathBuf {
-    let mut cache = dirs::cache_dir().unwrap();
-    cache.push(&format!("schmu/{id}.m4a"));
-    cache
-}
-
-fn get_youtube_url(id: &str) -> String {
-    format!("https://music.youtube.com/watch?v={id}")
-}
-
-#[derive(Deserialize)]
-struct YoutubeVideoResponse {
-    author_name: String,
-    title: String,
+    fn youtube_url(&self) -> String {
+        format!("https://music.youtube.com/watch?v={}", self.id)
+    }
 }

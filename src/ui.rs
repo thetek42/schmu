@@ -134,7 +134,7 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
 
             let offset = match song.downloaded {
                 true => 0.0,
-                false => 22.0,
+                false => 20.0,
             };
 
             d.draw_text_ex(
