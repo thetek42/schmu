@@ -19,6 +19,10 @@ fn main() {
     let downloader = Downloader::new();
     downloader.enqueue("YBdyc1WDlBQ");
     downloader.enqueue("1eQWdpWjXlk");
+    downloader.enqueue("Ucmo6hDZRSY");
+    downloader.enqueue("tIFFfP87Ooc");
+    downloader.enqueue("2509z0knTSk");
+    downloader.enqueue("y3Ov7PVHHag");
 
     while ui.is_open() {
         thread::sleep(Duration::from_millis(50));

@@ -1,3 +1,5 @@
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -63,6 +65,8 @@ const FONT_SIZE_BOLD: i32 = 18;
 fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
     let _closed_tx_guard = CallOnDrop::new(|| closed_tx.send(()));
 
+    /* raylib initialisation **********************************************************************/
+
     let (mut rl, thread) = raylib::init()
         .log_level(TraceLogLevel::LOG_WARNING)
         .size(1280, 720)
@@ -71,13 +75,29 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
         .vsync()
         .build();
 
+    let charset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~äöüÄÖÜßẞ";
+
     let font_regular = rl
-        .load_font_from_memory(&thread, ".ttf", FONT_DATA_REGULAR, FONT_SIZE_REGULAR, None)
+        .load_font_from_memory(
+            &thread,
+            ".ttf",
+            FONT_DATA_REGULAR,
+            FONT_SIZE_REGULAR,
+            Some(charset),
+        )
         .unwrap();
 
     let font_bold = rl
-        .load_font_from_memory(&thread, ".ttf", FONT_DATA_BOLD, FONT_SIZE_BOLD, None)
+        .load_font_from_memory(
+            &thread,
+            ".ttf",
+            FONT_DATA_BOLD,
+            FONT_SIZE_BOLD,
+            Some(charset),
+        )
         .unwrap();
+
+    /* textures ***********************************************************************************/
 
     let mut spinner = Image::gen_image_color(16 * 8 + 1, 16 * 8 + 1, Color::BLACK);
     // no draw_ring for images... :(
@@ -88,6 +108,10 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
     spinner.gen_texture_mipmaps();
     spinner.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
 
+    let mut thumbnails = ThumbnailStore::new(&mut rl, &thread);
+
+    /* user interface *****************************************************************************/
+
     while !rl.window_should_close() {
         if let Ok(msg) = msg_rx.try_recv() {
             match msg {
@@ -95,18 +119,32 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
             }
         }
 
+        thumbnails.fetch(&mut rl, &thread);
+
         let time = rl.get_time();
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
 
-        let state = state::get();
-
         /* queue **********************************************************************************/
 
-        for (index, song) in state.queue().iter().enumerate() {
+        for (index, song) in state::get().queue().iter().enumerate() {
             let y = (index * 64 + 100) as f32;
 
-            d.draw_rectangle(100, y as i32, 48, 48, Color::DIMGRAY);
+            let thumbnail = thumbnails.get(&song.id);
+            let min_side = i32::min(thumbnail.width(), thumbnail.height());
+            let offset_x = (thumbnail.width() - min_side) / 2;
+            let offset_y = (thumbnail.height() - min_side) / 2;
+            let texture_rect = rrect(offset_x, offset_y, min_side, min_side);
+            let output_rect = rrect(100, y, 48, 48);
+            let origin = rvec2(0, 0);
+            d.draw_texture_pro(
+                thumbnail,
+                texture_rect,
+                output_rect,
+                origin,
+                0.0,
+                Color::WHITE,
+            );
 
             d.draw_text_ex(
                 &font_regular,
@@ -146,5 +184,40 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
                 Color::GRAY,
             );
         }
+    }
+}
+
+struct ThumbnailStore {
+    thumbnails: HashMap<String, Texture2D>,
+    default: Texture2D,
+}
+
+impl ThumbnailStore {
+    fn new(rl: &mut RaylibHandle, thread: &RaylibThread) -> Self {
+        Self {
+            thumbnails: HashMap::new(),
+            default: Self::default_texture(rl, thread),
+        }
+    }
+
+    fn get(&mut self, id: &str) -> &Texture2D {
+        self.thumbnails.get(id).unwrap_or(&self.default)
+    }
+
+    fn fetch(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread) {
+        for song in state::get().queue() {
+            if let Entry::Vacant(entry) = self.thumbnails.entry(song.id.to_owned()) {
+                let image = Image::load_image_from_mem(".png", &song.thumbnail).unwrap();
+                let mut texture = rl.load_texture_from_image(thread, &image).unwrap();
+                texture.gen_texture_mipmaps();
+                texture.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
+                entry.insert(texture);
+            }
+        }
+    }
+
+    fn default_texture(rl: &mut RaylibHandle, thread: &RaylibThread) -> Texture2D {
+        let image = Image::gen_image_color(48, 48, Color::new(20, 20, 20, 255));
+        rl.load_texture_from_image(&thread, &image).unwrap()
     }
 }

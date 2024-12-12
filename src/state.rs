@@ -38,4 +38,5 @@ pub struct Song {
     pub title: String,
     pub artist: String,
     pub downloaded: bool,
+    pub thumbnail: Vec<u8>,
 }

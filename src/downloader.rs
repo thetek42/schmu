@@ -1,12 +1,13 @@
 use std::collections::VecDeque;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Cursor};
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
 
 use anyhow::Result;
+use image::{ImageFormat, ImageReader};
 use reqwest::blocking::Client;
 use serde::Deserialize;
 
@@ -73,16 +74,19 @@ impl InfoDownloaderThread {
 
     fn run_iter(&mut self) -> bool {
         if self.queue.is_empty() {
-            match self.info_rx.recv().unwrap() {
-                Message::Download { id } => self.enqueue(id),
-                Message::Quit => return false,
+            match self.info_rx.recv() {
+                Ok(Message::Download { id }) => self.enqueue(id),
+                Ok(Message::Quit) => return false,
+                Err(_) => return false,
             }
         }
 
-        while let Ok(message) = self.info_rx.try_recv() {
-            match message {
-                Message::Download { id } => self.enqueue(id),
-                Message::Quit => return false,
+        loop {
+            match self.info_rx.try_recv() {
+                Ok(Message::Download { id }) => self.enqueue(id),
+                Ok(Message::Quit) => return false,
+                Err(TryRecvError::Disconnected) => return false,
+                Err(TryRecvError::Empty) => break,
             }
         }
 
@@ -109,7 +113,9 @@ impl InfoDownloaderThread {
         };
 
         self.add_to_state_queue(song_info);
-        self.audio_tx.send(Message::Download { id: entry.id }).unwrap();
+        self.audio_tx
+            .send(Message::Download { id: entry.id })
+            .unwrap();
 
         true
     }
@@ -135,25 +141,50 @@ impl InfoDownloaderThread {
         }
     }
 
-    fn fetch_song_info(&self, id: &str) -> Result<Song, reqwest::Error> {
+    fn fetch_song_info(&self, id: &str) -> Result<Song> {
         log::info!("fetching song info for {id}");
 
         let client = Client::new();
         let request_url = format!(
             "https://www.youtube.com/oembed?format=json&url=https://www.youtube.com/watch?v={id}"
         );
-        let response = client
+        let mut response = client
             .get(request_url)
             .send()?
             .json::<YoutubeVideoResponse>()?;
 
-        log::info!("got song info for {id}: {} / {}", response.title, response.author_name);
+        if response.author_name.ends_with(" - Topic") {
+            response
+                .author_name
+                .truncate(response.author_name.len() - 8);
+        }
+        response.thumbnail_url = response
+            .thumbnail_url
+            .replace("hqdefault.jpg", "maxresdefault.jpg");
+
+        log::info!(
+            "got song info for {id}: {} / {}",
+            response.title,
+            response.author_name
+        );
+
+        log::info!("fetching thumbnail for {id} at {}", response.thumbnail_url);
+
+        let client = Client::new();
+        let orig_thumbnail = client.get(&response.thumbnail_url).send()?.bytes()?;
+
+        let mut thumbnail = Vec::new();
+        ImageReader::new(Cursor::new(orig_thumbnail))
+            .with_guessed_format()?
+            .decode()?
+            .write_to(&mut Cursor::new(&mut thumbnail), ImageFormat::Png)?;
 
         Ok(Song {
             id: id.to_owned(),
             title: response.title,
             artist: response.author_name,
             downloaded: false,
+            thumbnail,
         })
     }
 
@@ -183,6 +214,7 @@ impl InfoDownloaderThread {
 #[derive(Deserialize)]
 struct YoutubeVideoResponse {
     author_name: String,
+    thumbnail_url: String,
     title: String,
 }
 
@@ -207,16 +239,19 @@ impl AudioDownloaderThread {
 
     fn run_iter(&mut self) -> bool {
         if self.queue.is_empty() {
-            match self.rx.recv().unwrap() {
-                Message::Download { id } => self.enqueue(id),
-                Message::Quit => return false,
+            match self.rx.recv() {
+                Ok(Message::Download { id }) => self.enqueue(id),
+                Ok(Message::Quit) => return false,
+                Err(_) => return false,
             }
         }
 
-        while let Ok(message) = self.rx.try_recv() {
-            match message {
-                Message::Download { id } => self.enqueue(id),
-                Message::Quit => return false,
+        loop {
+            match self.rx.try_recv() {
+                Ok(Message::Download { id }) => self.enqueue(id),
+                Ok(Message::Quit) => return false,
+                Err(TryRecvError::Disconnected) => return false,
+                Err(TryRecvError::Empty) => break,
             }
         }
 
@@ -275,7 +310,7 @@ impl AudioDownloaderThread {
                 log::info!("{} downloaded successfully", entry.id);
                 let mut state = state::get();
                 state.mark_downloaded(&entry.id);
-            },
+            }
             Ok(status) => self.download_failed(entry, status, &mut command),
             Err(e) => {
                 log::error!("failed to wait on command: {e}");
@@ -285,7 +320,10 @@ impl AudioDownloaderThread {
     }
 
     fn download_failed(&mut self, entry: DownloadEntry, status: ExitStatus, command: &mut Child) {
-        log::error!("{} failed to download with exit code {status}, stderr:", entry.id);
+        log::error!(
+            "{} failed to download with exit code {status}, stderr:",
+            entry.id
+        );
         let stderr = command.stderr.take().unwrap();
         let stderr = BufReader::new(stderr);
         for line in stderr.lines() {
