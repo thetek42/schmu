@@ -58,9 +58,11 @@ enum Message {
 }
 
 const FONT_DATA_REGULAR: &[u8] = include_bytes!("fonts/Inter-Regular.ttf");
-const FONT_SIZE_REGULAR: i32 = 24;
+const FONT_SIZE_REGULAR: i32 = 32;
 const FONT_DATA_BOLD: &[u8] = include_bytes!("fonts/Inter-SemiBold.ttf");
-const FONT_SIZE_BOLD: i32 = 18;
+const FONT_SIZE_BOLD: i32 = 22;
+const FONT_DATA_LIGHT: &[u8] = include_bytes!("fonts/Inter-Light.ttf");
+const FONT_SIZE_LIGHT: i32 = 64;
 
 fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
     let _closed_tx_guard = CallOnDrop::new(|| closed_tx.send(()));
@@ -97,6 +99,16 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
         )
         .unwrap();
 
+    let font_light = rl
+        .load_font_from_memory(
+            &thread,
+            ".ttf",
+            FONT_DATA_LIGHT,
+            FONT_SIZE_LIGHT,
+            Some(charset),
+        )
+        .unwrap();
+
     /* textures ***********************************************************************************/
 
     let mut spinner = Image::gen_image_color(16 * 8 + 1, 16 * 8 + 1, Color::BLACK);
@@ -125,31 +137,50 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
 
+        /* currently playing **********************************************************************/
+
+        match state::get().playing() {
+            Some(song) => {
+                let thumbnail = thumbnails.get(&song.song.id);
+                draw_thumbnail(100, 100, 196, thumbnail, &mut d);
+
+                d.draw_text_ex(
+                    &font_light,
+                    &song.song.title,
+                    rvec2(340, 145),
+                    FONT_SIZE_LIGHT as f32,
+                    0.0,
+                    Color::GAINSBORO,
+                );
+
+                d.draw_text_ex(
+                    &font_regular,
+                    &song.song.artist,
+                    rvec2(342, 215),
+                    FONT_SIZE_REGULAR as f32,
+                    0.0,
+                    Color::GRAY,
+                );
+
+                let elapsed_ratio = song.elapsed.as_millis() as f32 / song.total.as_millis() as f32;
+                d.draw_rectangle(100, 300, 196, 4, Color::new(40, 40, 40, 255));
+                d.draw_rectangle(100, 300, (196.0 * elapsed_ratio) as i32, 4, Color::STEELBLUE);
+            },
+            None => (),
+        }
+
         /* queue **********************************************************************************/
 
-        for (index, song) in state::get().queue().iter().enumerate() {
-            let y = (index * 64 + 100) as f32;
+        for (index, song) in state::get().queue().enumerate() {
+            let y = (index * 80 + 360) as f32;
 
             let thumbnail = thumbnails.get(&song.id);
-            let min_side = i32::min(thumbnail.width(), thumbnail.height());
-            let offset_x = (thumbnail.width() - min_side) / 2;
-            let offset_y = (thumbnail.height() - min_side) / 2;
-            let texture_rect = rrect(offset_x, offset_y, min_side, min_side);
-            let output_rect = rrect(100, y, 48, 48);
-            let origin = rvec2(0, 0);
-            d.draw_texture_pro(
-                thumbnail,
-                texture_rect,
-                output_rect,
-                origin,
-                0.0,
-                Color::WHITE,
-            );
+            draw_thumbnail(100, y as i32, 64, thumbnail, &mut d);
 
             d.draw_text_ex(
                 &font_regular,
                 &song.title,
-                rvec2(160, y + 2.0),
+                rvec2(180, y + 4.0),
                 FONT_SIZE_REGULAR as f32,
                 0.0,
                 Color::GAINSBORO,
@@ -158,7 +189,7 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
             if !song.downloaded {
                 let rotation = ((time % 1.0) * 360.0) as f32;
                 let texture_rect = rrect(0, 0, spinner.width(), spinner.height());
-                let output_rect = rrect(168, y + 34.0, 16, 16);
+                let output_rect = rrect(188, y + 36.0, 16, 16);
                 let origin = rvec2(8, 8);
                 d.draw_texture_pro(
                     &spinner,
@@ -178,7 +209,7 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
             d.draw_text_ex(
                 &font_bold,
                 &song.artist,
-                rvec2(160.0 + offset, y + 26.0),
+                rvec2(181.0 + offset, y + 36.0),
                 FONT_SIZE_BOLD as f32,
                 0.0,
                 Color::GRAY,
@@ -220,4 +251,21 @@ impl ThumbnailStore {
         let image = Image::gen_image_color(48, 48, Color::new(20, 20, 20, 255));
         rl.load_texture_from_image(&thread, &image).unwrap()
     }
+}
+
+fn draw_thumbnail(x: i32, y: i32, size: i32, texture: &Texture2D, draw: &mut RaylibDrawHandle<'_>) {
+    let min_side = i32::min(texture.width(), texture.height());
+    let offset_x = (texture.width() - min_side) / 2;
+    let offset_y = (texture.height() - min_side) / 2;
+    let texture_rect = rrect(offset_x, offset_y, min_side, min_side);
+    let output_rect = rrect(x, y, size, size);
+    let origin = rvec2(0, 0);
+    draw.draw_texture_pro(
+        texture,
+        texture_rect,
+        output_rect,
+        origin,
+        0.0,
+        Color::WHITE,
+    );
 }

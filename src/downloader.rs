@@ -12,6 +12,7 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 
 use crate::state::{self, Song};
+use crate::util;
 
 /* public api *************************************************************************************/
 
@@ -70,6 +71,8 @@ impl InfoDownloaderThread {
         };
 
         while downloader.run_iter() {}
+
+        downloader.audio_tx.send(Message::Quit).unwrap();
     }
 
     fn run_iter(&mut self) -> bool {
@@ -305,6 +308,7 @@ impl AudioDownloaderThread {
         log::info!("executing {command:?}");
         let mut command = command.spawn().unwrap();
 
+        // TODO: check for quit message while waiting
         match command.wait() {
             Ok(status) if status.success() => {
                 log::info!("{} downloaded successfully", entry.id);
@@ -347,15 +351,11 @@ struct DownloadEntry {
 
 impl DownloadEntry {
     fn audio_cache_location(&self) -> PathBuf {
-        let mut cache = dirs::cache_dir().unwrap();
-        cache.push(&format!("schmu/{}.m4a", self.id));
-        cache
+        util::audio_cache_location(&self.id)
     }
 
     fn song_info_cache_location(&self) -> PathBuf {
-        let mut cache = dirs::cache_dir().unwrap();
-        cache.push(&format!("schmu/{}.json", self.id));
-        cache
+        util::song_info_cache_location(&self.id)
     }
 
     fn is_cached(&self) -> bool {
