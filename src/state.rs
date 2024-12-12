@@ -1,4 +1,8 @@
-use std::{collections::{vec_deque::Iter, VecDeque}, sync::{Mutex, MutexGuard}, time::Duration};
+use std::{
+    collections::{vec_deque::Iter, VecDeque},
+    sync::{Mutex, MutexGuard},
+    time::Duration,
+};
 
 use serde::{Deserialize, Serialize};
 

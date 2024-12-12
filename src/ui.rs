@@ -74,8 +74,9 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
         .size(1280, 720)
         .title("schmu")
         .resizable()
-        .vsync()
         .build();
+
+    rl.set_target_fps(get_monitor_refresh_rate(get_current_monitor()) as u32);
 
     let charset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~äöüÄÖÜßẞ";
 
@@ -137,6 +138,7 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
         thumbnails.fetch(&mut rl, &thread);
 
         let time = rl.get_time();
+        let screen_height = rl.get_screen_height();
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
 
@@ -167,8 +169,14 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
 
                 let elapsed_ratio = song.elapsed.as_millis() as f32 / song.total.as_millis() as f32;
                 d.draw_rectangle(100, 300, 196, 4, Color::new(40, 40, 40, 255));
-                d.draw_rectangle(100, 300, (196.0 * elapsed_ratio) as i32, 4, Color::STEELBLUE);
-            },
+                d.draw_rectangle(
+                    100,
+                    300,
+                    (196.0 * elapsed_ratio) as i32,
+                    4,
+                    Color::STEELBLUE,
+                );
+            }
             None => {
                 draw_thumbnail(100, 100, 196, &no_song_cover, &mut d);
 
@@ -180,14 +188,16 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
                     0.0,
                     Color::GRAY,
                 );
-            },
+            }
         }
 
         /* queue **********************************************************************************/
 
-        for (index, song) in state::get().queue().enumerate() {
-            let y = (index * 80 + 360) as f32;
+        let state = state::get();
+        let mut queue = state.queue();
+        let mut y = 360.0;
 
+        for song in &mut queue {
             let thumbnail = thumbnails.get(&song.id);
             draw_thumbnail(100, y as i32, 64, thumbnail, &mut d);
 
@@ -228,7 +238,27 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
                 0.0,
                 Color::GRAY,
             );
+
+            y += 80.0;
+
+            if y as i32 > screen_height - 160 {
+                break;
+            }
         }
+
+        let remaining = queue.count();
+        if remaining > 0 {
+            let plural = if remaining == 1 { "" } else { "s" };
+            d.draw_text_ex(
+                &font_bold,
+                &format!("{remaining} more song{plural} in queue"),
+                rvec2(100, y),
+                FONT_SIZE_BOLD as f32,
+                0.0,
+                Color::DIMGRAY,
+            );
+        }
+        drop(state);
     }
 }
 

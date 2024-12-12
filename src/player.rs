@@ -55,7 +55,7 @@ impl PlayerThread {
             Err(TryRecvError::Disconnected) => return false,
             Err(TryRecvError::Empty) => (),
         }
-        
+
         let Some(next_song_id) = self.get_next_song() else {
             thread::sleep(Duration::from_millis(50));
             return true;
@@ -102,11 +102,11 @@ impl PlayerThread {
                 Some(Ok(Event::Shutdown)) => {
                     log::info!("done playing {id}");
                     return Ok(true);
-                },
+                }
                 Some(Ok(Event::EndFile(r))) => {
                     log::info!("mpv reached endfile {id} with reason {r}");
                     return Ok(true);
-                },
+                }
                 Some(Ok(_)) => (),
                 Some(Err(e)) => {
                     log::warn!("mpv got error: {e}");
