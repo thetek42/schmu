@@ -12,13 +12,18 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new() -> Self {
+    pub fn start() -> Self {
         let (tx, rx) = mpsc::channel();
 
         log::info!("starting player");
         _ = thread::spawn(move || PlayerThread::run(rx));
 
         Self { tx }
+    }
+
+    pub fn next(&self) {
+        let msg = Message::Next;
+        self.tx.send(msg).unwrap();
     }
 
     fn quit(&self) {
@@ -36,6 +41,7 @@ impl Drop for Player {
 
 enum Message {
     Quit,
+    Next,
 }
 
 struct PlayerThread {
@@ -52,6 +58,7 @@ impl PlayerThread {
     fn run_iter(&self) -> bool {
         match self.rx.try_recv() {
             Ok(Message::Quit) => return false,
+            Ok(Message::Next) => (),
             Err(TryRecvError::Disconnected) => return false,
             Err(TryRecvError::Empty) => (),
         }
@@ -89,6 +96,7 @@ impl PlayerThread {
         loop {
             match self.rx.try_recv() {
                 Ok(Message::Quit) => return Ok(false),
+                Ok(Message::Next) => return Ok(true),
                 Err(TryRecvError::Disconnected) => return Ok(false),
                 Err(TryRecvError::Empty) => (),
             }

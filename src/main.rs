@@ -1,10 +1,6 @@
-use std::thread;
-use std::time::Duration;
-
-use player::Player;
-use ui::UI;
-
 use crate::downloader::Downloader;
+use crate::player::Player;
+use crate::ui::{Event, UI};
 
 mod downloader;
 mod logger;
@@ -18,7 +14,7 @@ fn main() {
 
     let ui = UI::start();
 
-    let downloader = Downloader::new();
+    let downloader = Downloader::start();
     downloader.enqueue("YBdyc1WDlBQ");
     downloader.enqueue("1eQWdpWjXlk");
     downloader.enqueue("Ucmo6hDZRSY");
@@ -27,9 +23,12 @@ fn main() {
     downloader.enqueue("y3Ov7PVHHag");
     downloader.enqueue("63rhBxnd768");
 
-    let _player = Player::new();
+    let player = Player::start();
 
-    while ui.is_open() {
-        thread::sleep(Duration::from_millis(50));
+    loop {
+        match ui.wait_event() {
+            Event::Quit => break,
+            Event::Next => player.next(),
+        }
     }
 }

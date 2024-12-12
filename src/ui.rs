@@ -1,6 +1,5 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
@@ -11,32 +10,24 @@ use crate::util::CallOnDrop;
 
 pub struct UI {
     msg_tx: Sender<Message>,
-    closed_rx: Receiver<()>,
-    is_open: AtomicBool,
+    event_rx: Receiver<Event>,
 }
 
 impl UI {
     pub fn start() -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
-        let (closed_tx, closed_rx) = mpsc::channel();
+        let (event_tx, event_rx) = mpsc::channel();
 
         log::info!("starting ui");
-        _ = thread::spawn(move || ui(msg_rx, closed_tx));
+        _ = thread::spawn(move || ui(msg_rx, event_tx));
 
-        Self {
-            msg_tx,
-            closed_rx,
-            is_open: AtomicBool::new(true),
-        }
+        Self { msg_tx, event_rx }
     }
 
-    pub fn is_open(&self) -> bool {
-        match self.closed_rx.try_recv() {
-            Ok(()) => {
-                self.is_open.store(false, Ordering::SeqCst);
-                false
-            }
-            Err(_) => self.is_open.load(Ordering::SeqCst),
+    pub fn wait_event(&self) -> Event {
+        match self.event_rx.recv() {
+            Ok(event) => event,
+            Err(_) => Event::Quit,
         }
     }
 
@@ -57,6 +48,11 @@ enum Message {
     Quit,
 }
 
+pub enum Event {
+    Quit,
+    Next,
+}
+
 const FONT_DATA_REGULAR: &[u8] = include_bytes!("fonts/Inter-Regular.ttf");
 const FONT_SIZE_REGULAR: i32 = 32;
 const FONT_DATA_BOLD: &[u8] = include_bytes!("fonts/Inter-SemiBold.ttf");
@@ -64,8 +60,8 @@ const FONT_SIZE_BOLD: i32 = 22;
 const FONT_DATA_LIGHT: &[u8] = include_bytes!("fonts/Inter-Light.ttf");
 const FONT_SIZE_LIGHT: i32 = 64;
 
-fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
-    let _closed_tx_guard = CallOnDrop::new(|| closed_tx.send(()));
+fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
+    let _closed_tx_guard = CallOnDrop::new(|| event_tx.send(Event::Quit));
 
     /* raylib initialisation **********************************************************************/
 
@@ -139,6 +135,14 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
 
         let time = rl.get_time();
         let screen_height = rl.get_screen_height();
+
+        /* keypress handling **********************************************************************/
+
+        match rl.get_key_pressed() {
+            Some(KeyboardKey::KEY_N) => event_tx.send(Event::Next).unwrap(),
+            _ => (),
+        }
+
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
 

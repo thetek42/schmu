@@ -22,7 +22,7 @@ pub struct Downloader {
 }
 
 impl Downloader {
-    pub fn new() -> Self {
+    pub fn start() -> Self {
         let (info_tx, info_rx) = mpsc::channel();
         let (audio_tx, audio_rx) = mpsc::channel();
 
@@ -319,13 +319,13 @@ impl AudioDownloaderThread {
                 Ok(Some(status)) => {
                     self.download_failed(entry, status, &mut command);
                     return true;
-                },
+                }
                 Ok(None) => match self.rx.try_recv() {
                     Ok(Message::Download { id }) => self.enqueue(id),
                     Ok(Message::Quit) | Err(TryRecvError::Disconnected) => {
                         _ = command.kill();
                         return false;
-                    },
+                    }
                     Err(TryRecvError::Empty) => thread::sleep(Duration::from_millis(50)),
                 },
                 Err(e) => {
