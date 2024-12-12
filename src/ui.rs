@@ -111,11 +111,11 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
 
     /* textures ***********************************************************************************/
 
-    let mut spinner = Image::gen_image_color(16 * 8 + 1, 16 * 8 + 1, Color::BLACK);
+    let mut spinner = Image::gen_image_color(20 * 8 + 1, 20 * 8 + 1, Color::BLACK);
     // no draw_ring for images... :(
-    spinner.draw_circle(16 * 4 + 1, 16 * 4 + 1, 14 * 4 + 1, Color::WHITE);
-    spinner.draw_circle(16 * 4 + 1, 16 * 4 + 1, 10 * 4 + 1, Color::BLACK);
-    spinner.draw_rectangle(0, 0, 16 * 4 + 1, 16 * 8 + 1, Color::BLACK);
+    spinner.draw_circle(20 * 4 + 1, 20 * 4 + 1, 18 * 4 + 1, Color::WHITE);
+    spinner.draw_circle(20 * 4 + 1, 20 * 4 + 1, 14 * 4 + 1, Color::BLACK);
+    spinner.draw_rectangle(0, 0, 20 * 4 + 1, 20 * 8 + 1, Color::BLACK);
     let mut spinner = rl.load_texture_from_image(&thread, &spinner).unwrap();
     spinner.gen_texture_mipmaps();
     spinner.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
@@ -203,8 +203,8 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
             if !song.downloaded {
                 let rotation = ((time % 1.0) * 360.0) as f32;
                 let texture_rect = rrect(0, 0, spinner.width(), spinner.height());
-                let output_rect = rrect(188, y + 36.0, 16, 16);
-                let origin = rvec2(8, 8);
+                let output_rect = rrect(190, y + 46.0, 20, 20);
+                let origin = rvec2(10, 10);
                 d.draw_texture_pro(
                     &spinner,
                     texture_rect,
@@ -217,7 +217,7 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
 
             let offset = match song.downloaded {
                 true => 0.0,
-                false => 20.0,
+                false => 24.0,
             };
 
             d.draw_text_ex(
