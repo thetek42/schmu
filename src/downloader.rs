@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread;
+use std::time::Duration;
 
 use anyhow::Result;
 use image::{ImageFormat, ImageReader};
@@ -264,9 +265,7 @@ impl AudioDownloaderThread {
             return true;
         }
 
-        self.download(entry);
-
-        true
+        self.download(entry)
     }
 
     fn enqueue(&mut self, id: String) {
@@ -290,7 +289,7 @@ impl AudioDownloaderThread {
         }
     }
 
-    fn download(&mut self, entry: DownloadEntry) {
+    fn download(&mut self, entry: DownloadEntry) -> bool {
         log::info!("downloading {}", entry.id);
 
         let mut command = Command::new("yt-dlp");
@@ -309,16 +308,31 @@ impl AudioDownloaderThread {
         let mut command = command.spawn().unwrap();
 
         // TODO: check for quit message while waiting
-        match command.wait() {
-            Ok(status) if status.success() => {
-                log::info!("{} downloaded successfully", entry.id);
-                let mut state = state::get();
-                state.mark_downloaded(&entry.id);
-            }
-            Ok(status) => self.download_failed(entry, status, &mut command),
-            Err(e) => {
-                log::error!("failed to wait on command: {e}");
-                self.requeue(entry);
+        loop {
+            match command.try_wait() {
+                Ok(Some(status)) if status.success() => {
+                    log::info!("{} downloaded successfully", entry.id);
+                    let mut state = state::get();
+                    state.mark_downloaded(&entry.id);
+                    return true;
+                }
+                Ok(Some(status)) => {
+                    self.download_failed(entry, status, &mut command);
+                    return true;
+                },
+                Ok(None) => match self.rx.try_recv() {
+                    Ok(Message::Download { id }) => self.enqueue(id),
+                    Ok(Message::Quit) | Err(TryRecvError::Disconnected) => {
+                        _ = command.kill();
+                        return false;
+                    },
+                    Err(TryRecvError::Empty) => thread::sleep(Duration::from_millis(50)),
+                },
+                Err(e) => {
+                    log::error!("failed to wait on command: {e}");
+                    self.requeue(entry);
+                    return true;
+                }
             }
         }
     }
