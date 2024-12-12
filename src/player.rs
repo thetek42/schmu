@@ -26,6 +26,11 @@ impl Player {
         self.tx.send(msg).unwrap();
     }
 
+    pub fn toggle_pause(&self) {
+        let msg = Message::TogglePause;
+        self.tx.send(msg).unwrap();
+    }
+
     fn quit(&self) {
         log::info!("terminating player");
         let msg = Message::Quit;
@@ -42,6 +47,7 @@ impl Drop for Player {
 enum Message {
     Quit,
     Next,
+    TogglePause,
 }
 
 struct PlayerThread {
@@ -58,7 +64,7 @@ impl PlayerThread {
     fn run_iter(&self) -> bool {
         match self.rx.try_recv() {
             Ok(Message::Quit) => return false,
-            Ok(Message::Next) => (),
+            Ok(_) => (),
             Err(TryRecvError::Disconnected) => return false,
             Err(TryRecvError::Empty) => (),
         }
@@ -92,11 +98,16 @@ impl PlayerThread {
         mpv.command("loadfile", &[path, "replace"])?;
 
         let mut event = EventContext::new(mpv.ctx);
+        let mut paused = false;
 
         loop {
             match self.rx.try_recv() {
                 Ok(Message::Quit) => return Ok(false),
                 Ok(Message::Next) => return Ok(true),
+                Ok(Message::TogglePause) => {
+                    paused = !paused;
+                    mpv.set_property("pause", paused)?;
+                },
                 Err(TryRecvError::Disconnected) => return Ok(false),
                 Err(TryRecvError::Empty) => (),
             }

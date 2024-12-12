@@ -51,6 +51,7 @@ enum Message {
 pub enum Event {
     Quit,
     Next,
+    TogglePause
 }
 
 const FONT_DATA_REGULAR: &[u8] = include_bytes!("fonts/Inter-Regular.ttf");
@@ -140,6 +141,7 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
 
         match rl.get_key_pressed() {
             Some(KeyboardKey::KEY_N) => event_tx.send(Event::Next).unwrap(),
+            Some(KeyboardKey::KEY_SPACE) => event_tx.send(Event::TogglePause).unwrap(),
             _ => (),
         }
 

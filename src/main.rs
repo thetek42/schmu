@@ -29,6 +29,7 @@ fn main() {
         match ui.wait_event() {
             Event::Quit => break,
             Event::Next => player.next(),
+            Event::TogglePause => player.toggle_pause(),
         }
     }
 }
