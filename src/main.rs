@@ -3,14 +3,13 @@ use crate::player::Player;
 use crate::ui::{Event, UI};
 
 mod downloader;
-mod logger;
 mod player;
 mod state;
 mod ui;
 mod util;
 
 fn main() {
-    logger::init();
+    shared::logger::init();
 
     let ui = UI::start();
 

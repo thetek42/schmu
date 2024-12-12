@@ -4,9 +4,9 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
 use raylib::prelude::*;
+use shared::misc::CallOnDrop;
 
 use crate::state;
-use crate::util::CallOnDrop;
 
 pub struct UI {
     msg_tx: Sender<Message>,
