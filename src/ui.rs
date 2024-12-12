@@ -120,6 +120,9 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
     spinner.gen_texture_mipmaps();
     spinner.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
 
+    let no_song_cover = Image::gen_image_color(48, 48, Color::new(20, 20, 20, 255));
+    let no_song_cover = rl.load_texture_from_image(&thread, &no_song_cover).unwrap();
+
     let mut thumbnails = ThumbnailStore::new(&mut rl, &thread);
 
     /* user interface *****************************************************************************/
@@ -166,7 +169,18 @@ fn ui(msg_rx: Receiver<Message>, closed_tx: Sender<()>) {
                 d.draw_rectangle(100, 300, 196, 4, Color::new(40, 40, 40, 255));
                 d.draw_rectangle(100, 300, (196.0 * elapsed_ratio) as i32, 4, Color::STEELBLUE);
             },
-            None => (),
+            None => {
+                draw_thumbnail(100, 100, 196, &no_song_cover, &mut d);
+
+                d.draw_text_ex(
+                    &font_light,
+                    "No song queued",
+                    rvec2(340, 145),
+                    FONT_SIZE_LIGHT as f32,
+                    0.0,
+                    Color::GRAY,
+                );
+            },
         }
 
         /* queue **********************************************************************************/
