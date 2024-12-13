@@ -1,11 +1,11 @@
+use std::io::ErrorKind;
 use std::net::{TcpListener, TcpStream};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use anyhow::Result;
 use shared::misc::CallOnDrop;
-use tungstenite::Message;
-use uuid::Uuid;
+use tungstenite::{Error, Message};
 
 use crate::connections;
 
@@ -53,24 +53,31 @@ fn handle_websocket(socket: TcpStream) -> Result<()> {
 
     let mut socket = tungstenite::accept(socket)?;
 
-    let uuid = Uuid::new_v4();
-    log::info!("assigning uuid {uuid} to {peer}");
-    socket.send(Message::Text(format!("hello:{uuid}")))?;
+    let id = connections::get().register();
+    let _unregister_guard = CallOnDrop::new(|| connections::get().unregister(&id));
+    log::info!("assigned id {id} to {peer}");
+    socket.send(Message::Text(format!("hello:{id}")))?;
 
-    connections::get().register(uuid);
-    let _unregister_guard = CallOnDrop::new(|| connections::get().unregister(uuid));
+    socket.get_ref().set_nonblocking(true)?;
 
     loop {
-        let msg = socket.read()?;
-        
-        match msg {
-            Message::Ping(d) => socket.send(Message::Pong(d))?,
-            Message::Close(_) => {
+        match socket.read() {
+            Ok(Message::Ping(d)) => socket.send(Message::Pong(d))?,
+            Ok(Message::Close(_)) => {
                 log::info!("({peer}) closing connection");
                 break;
             }
-            _ => (),
+            Ok(_) => (),
+            Err(Error::Io(e)) if e.kind() == ErrorKind::WouldBlock => (),
+            Err(e) => Err(e)?,
         }
+
+        for song in connections::get().retrieve_queue(&id) {
+            log::info!("pushing {song} to {id}");
+            socket.send(Message::Text(format!("push:{song}")))?;
+        }
+
+        thread::sleep(Duration::from_millis(50));
     }
 
     Ok(())
