@@ -1,8 +1,11 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::io::Cursor;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::{self, JoinHandle};
 
+use image::{ImageFormat, Luma};
+use qrcode::QrCode;
 use raylib::prelude::*;
 use shared::misc::CallOnDrop;
 
@@ -66,6 +69,7 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
         .resizable()
         .build();
 
+    rl.set_exit_key(None);
     rl.set_target_fps(get_monitor_refresh_rate(get_current_monitor()) as u32);
 
     let charset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~äöüÄÖÜßẞ";
@@ -114,6 +118,9 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
     let no_song_cover = Image::gen_image_color(48, 48, Color::new(20, 20, 20, 255));
     let no_song_cover = rl.load_texture_from_image(&thread, &no_song_cover).unwrap();
 
+    let mut server_qrcode: Option<Texture2D> = None;
+    let mut server_qrcode_id: String = "".to_owned();
+
     let mut thumbnails = ThumbnailStore::new(&mut rl, &thread);
 
     /* user interface *****************************************************************************/
@@ -127,7 +134,15 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
 
         thumbnails.fetch(&mut rl, &thread);
 
+        if let ConnectionState::Connected { id } = state::get().connection_state() {
+            if server_qrcode.is_none() || &server_qrcode_id != id {
+                generate_qr_texture(&mut rl, &thread, &mut server_qrcode, &make_url(&id));
+                server_qrcode_id = id.to_owned();
+            }
+        }
+
         let time = rl.get_time();
+        let screen_width = rl.get_screen_width();
         let screen_height = rl.get_screen_height();
 
         /* keypress handling **********************************************************************/
@@ -260,20 +275,64 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
 
         /* connection status **********************************************************************/
 
-        let s = match state.connection_state() {
-            ConnectionState::NotConnected => "not connected".to_owned(),
-            ConnectionState::Connected { id } => format!("connected: {id}"),
-            ConnectionState::Error { msg } => format!("connection error: {msg}"),
-        };
+        match state.connection_state() {
+            ConnectionState::NotConnected => {
+                let msg = "not connected";
+                let text_width = font_bold.measure_text(msg, FONT_SIZE_BOLD as f32, 0.0).x as i32;
+                let x = screen_width - text_width - 20;
+                let y = screen_height - FONT_SIZE_BOLD - 20;
+                d.draw_text_ex(
+                    &font_bold,
+                    msg,
+                    rvec2(x, y),
+                    FONT_SIZE_BOLD as f32,
+                    0.0,
+                    Color::MAROON,
+                );
+            }
+            ConnectionState::Connected { id } => {
+                let url = make_url(&id);
 
-        d.draw_text_ex(
-            &font_regular,
-            &s,
-            rvec2(10, 10),
-            FONT_SIZE_REGULAR as f32,
-            0.0,
-            Color::RED,
-        );
+                let text_width = font_bold.measure_text(&url, FONT_SIZE_BOLD as f32, 0.0).x as i32;
+                let x = screen_width - text_width - 20;
+                let y = screen_height - FONT_SIZE_BOLD - 20;
+                d.draw_text_ex(
+                    &font_bold,
+                    &url,
+                    rvec2(x, y),
+                    FONT_SIZE_BOLD as f32,
+                    0.0,
+                    Color::DIMGRAY,
+                );
+
+                let qr = server_qrcode.as_ref().unwrap();
+                let size = 29 * 6;
+                let x = screen_width - size - 20;
+                let y = screen_height - size - 55;
+                d.draw_texture_pro(
+                    qr,
+                    rrect(0, 0, qr.width(), qr.height()),
+                    rrect(x, y, size, size),
+                    rvec2(0, 0),
+                    0.0,
+                    Color::DIMGRAY,
+                );
+            }
+            ConnectionState::Error { msg } => {
+                let msg = format!("error: {msg}");
+                let text_width = font_bold.measure_text(&msg, FONT_SIZE_BOLD as f32, 0.0).x as i32;
+                let x = screen_width - text_width - 20;
+                let y = screen_height - FONT_SIZE_BOLD - 20;
+                d.draw_text_ex(
+                    &font_bold,
+                    &msg,
+                    rvec2(x, y),
+                    FONT_SIZE_BOLD as f32,
+                    0.0,
+                    Color::MAROON,
+                );
+            }
+        };
 
         drop(state);
     }
@@ -329,4 +388,25 @@ fn draw_thumbnail(x: i32, y: i32, size: i32, texture: &Texture2D, draw: &mut Ray
         0.0,
         Color::WHITE,
     );
+}
+
+fn generate_qr_texture<'a>(
+    rl: &mut RaylibHandle,
+    thread: &RaylibThread,
+    texture_out: &'a mut Option<Texture2D>,
+    url: &str,
+) {
+    let qrcode = QrCode::new(url.as_bytes()).unwrap();
+    let image = qrcode.render::<Luma<u8>>().dark_color(Luma([255])).light_color(Luma([0])).quiet_zone(false).build();
+    let mut buffer = Vec::new();
+    let mut cursor = Cursor::new(&mut buffer);
+    image.write_to(&mut cursor, ImageFormat::Png).unwrap();
+    let image = Image::load_image_from_mem(".png", &buffer).unwrap();
+    let texture = rl.load_texture_from_image(thread, &image).unwrap();
+    *texture_out = Some(texture);
+}
+
+fn make_url(id: &str) -> String {
+    // TODO: change to hosted
+    format!("http://localhost:6969/submit/{id}")
 }
