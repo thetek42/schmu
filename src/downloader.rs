@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Cursor};
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -19,6 +19,8 @@ use crate::util;
 
 pub struct Downloader {
     info_tx: Sender<Message>,
+    info_thread: Option<JoinHandle<()>>,
+    audio_thread: Option<JoinHandle<()>>,
 }
 
 impl Downloader {
@@ -27,10 +29,14 @@ impl Downloader {
         let (audio_tx, audio_rx) = mpsc::channel();
 
         log::info!("starting downloader");
-        _ = thread::spawn(move || InfoDownloaderThread::run(info_rx, audio_tx));
-        _ = thread::spawn(move || AudioDownloaderThread::run(audio_rx));
+        let info_thread = thread::spawn(move || InfoDownloaderThread::run(info_rx, audio_tx));
+        let audio_thread = thread::spawn(move || AudioDownloaderThread::run(audio_rx));
 
-        Self { info_tx }
+        Self {
+            info_tx,
+            info_thread: Some(info_thread),
+            audio_thread: Some(audio_thread),
+        }
     }
 
     pub fn enqueue(&self, id: &str) {
@@ -50,6 +56,12 @@ impl Downloader {
 impl Drop for Downloader {
     fn drop(&mut self) {
         self.quit();
+        if let Some(thread) = self.info_thread.take() {
+            _ = thread.join();
+        }
+        if let Some(thread) = self.audio_thread.take() {
+            _ = thread.join();
+        }
     }
 }
 

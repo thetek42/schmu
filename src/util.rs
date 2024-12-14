@@ -11,3 +11,13 @@ pub fn song_info_cache_location(id: &str) -> PathBuf {
     cache.push(&format!("schmu/{id}.json"));
     cache
 }
+
+pub enum Event {
+    ServerHello { id: String },
+    ConnError { msg: String },
+    ServerClose,
+    Push { song_id: String },
+    UIQuit,
+    NextSong,
+    TogglePause,
+}

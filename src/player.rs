@@ -1,5 +1,5 @@
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use libmpv2::events::{Event, EventContext};
@@ -9,6 +9,7 @@ use crate::{state, util};
 
 pub struct Player {
     tx: Sender<Message>,
+    thread: Option<JoinHandle<()>>,
 }
 
 impl Player {
@@ -16,9 +17,12 @@ impl Player {
         let (tx, rx) = mpsc::channel();
 
         log::info!("starting player");
-        _ = thread::spawn(move || PlayerThread::run(rx));
+        let thread = thread::spawn(move || PlayerThread::run(rx));
 
-        Self { tx }
+        Self {
+            tx,
+            thread: Some(thread),
+        }
     }
 
     pub fn next(&self) {
@@ -41,6 +45,9 @@ impl Player {
 impl Drop for Player {
     fn drop(&mut self) {
         self.quit();
+        if let Some(thread) = self.thread.take() {
+            _ = thread.join();
+        }
     }
 }
 
@@ -107,7 +114,7 @@ impl PlayerThread {
                 Ok(Message::TogglePause) => {
                     paused = !paused;
                     mpv.set_property("pause", paused)?;
-                },
+                }
                 Err(TryRecvError::Disconnected) => return Ok(false),
                 Err(TryRecvError::Empty) => (),
             }

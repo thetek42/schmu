@@ -15,6 +15,7 @@ pub fn get() -> MutexGuard<'static, State> {
 pub struct State {
     queue: VecDeque<Song>,
     playing: Option<PlayingSong>,
+    connection: ConnectionState,
 }
 
 impl State {
@@ -22,6 +23,7 @@ impl State {
         Self {
             queue: VecDeque::new(),
             playing: None,
+            connection: ConnectionState::NotConnected,
         }
     }
 
@@ -64,6 +66,18 @@ impl State {
         });
         Some(id)
     }
+
+    pub fn set_connected(&mut self, id: String) {
+        self.connection = ConnectionState::Connected { id };
+    }
+
+    pub fn set_connection_error(&mut self, msg: String) {
+        self.connection = ConnectionState::Error { msg }
+    }
+
+    pub fn connection_state(&self) -> &ConnectionState {
+        &self.connection
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -79,4 +93,10 @@ pub struct PlayingSong {
     pub song: Song,
     pub total: Duration,
     pub elapsed: Duration,
+}
+
+pub enum ConnectionState {
+    NotConnected,
+    Connected { id: String },
+    Error { msg: String },
 }

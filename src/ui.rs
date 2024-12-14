@@ -1,33 +1,29 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread;
+use std::thread::{self, JoinHandle};
 
 use raylib::prelude::*;
 use shared::misc::CallOnDrop;
 
-use crate::state;
+use crate::state::{self, ConnectionState};
+use crate::util::Event;
 
 pub struct UI {
     msg_tx: Sender<Message>,
-    event_rx: Receiver<Event>,
+    thread: Option<JoinHandle<()>>,
 }
 
 impl UI {
-    pub fn start() -> Self {
+    pub fn start(event_tx: Sender<Event>) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
-        let (event_tx, event_rx) = mpsc::channel();
 
         log::info!("starting ui");
-        _ = thread::spawn(move || ui(msg_rx, event_tx));
+        let thread = thread::spawn(move || ui(msg_rx, event_tx));
 
-        Self { msg_tx, event_rx }
-    }
-
-    pub fn wait_event(&self) -> Event {
-        match self.event_rx.recv() {
-            Ok(event) => event,
-            Err(_) => Event::Quit,
+        Self {
+            msg_tx,
+            thread: Some(thread),
         }
     }
 
@@ -41,17 +37,14 @@ impl UI {
 impl Drop for UI {
     fn drop(&mut self) {
         self.quit();
+        if let Some(thread) = self.thread.take() {
+            _ = thread.join();
+        }
     }
 }
 
 enum Message {
     Quit,
-}
-
-pub enum Event {
-    Quit,
-    Next,
-    TogglePause
 }
 
 const FONT_DATA_REGULAR: &[u8] = include_bytes!("fonts/Inter-Regular.ttf");
@@ -62,7 +55,7 @@ const FONT_DATA_LIGHT: &[u8] = include_bytes!("fonts/Inter-Light.ttf");
 const FONT_SIZE_LIGHT: i32 = 64;
 
 fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
-    let _closed_tx_guard = CallOnDrop::new(|| event_tx.send(Event::Quit));
+    let _closed_tx_guard = CallOnDrop::new(|| event_tx.send(Event::UIQuit));
 
     /* raylib initialisation **********************************************************************/
 
@@ -140,7 +133,7 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
         /* keypress handling **********************************************************************/
 
         match rl.get_key_pressed() {
-            Some(KeyboardKey::KEY_N) => event_tx.send(Event::Next).unwrap(),
+            Some(KeyboardKey::KEY_N) => event_tx.send(Event::NextSong).unwrap(),
             Some(KeyboardKey::KEY_SPACE) => event_tx.send(Event::TogglePause).unwrap(),
             _ => (),
         }
@@ -264,6 +257,24 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
                 Color::DIMGRAY,
             );
         }
+
+        /* connection status **********************************************************************/
+
+        let s = match state.connection_state() {
+            ConnectionState::NotConnected => "not connected".to_owned(),
+            ConnectionState::Connected { id } => format!("connected: {id}"),
+            ConnectionState::Error { msg } => format!("connection error: {msg}"),
+        };
+
+        d.draw_text_ex(
+            &font_regular,
+            &s,
+            rvec2(10, 10),
+            FONT_SIZE_REGULAR as f32,
+            0.0,
+            Color::RED,
+        );
+
         drop(state);
     }
 }
