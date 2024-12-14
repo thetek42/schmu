@@ -64,7 +64,7 @@ fn handle_websocket(socket: TcpStream) -> Result<()> {
         match socket.read() {
             Ok(Message::Ping(d)) => socket.send(Message::Pong(d))?,
             Ok(Message::Close(_)) => {
-                log::info!("({peer}) closing connection");
+                log::info!("closing connection to {peer}");
                 break;
             }
             Ok(_) => (),
