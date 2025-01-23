@@ -1,8 +1,7 @@
-use std::sync::{Mutex, MutexGuard};
-
 use rand::Rng;
+use tokio::sync::{mpsc::{channel, Receiver, Sender}, Mutex, MutexGuard};
 
-static CONNECTIONS: Mutex<Connections> = Mutex::new(Connections::new());
+static CONNECTIONS: Mutex<Connections> = Mutex::const_new(Connections::new());
 
 pub struct Connections {
     connections: Vec<Connection>,
@@ -15,15 +14,16 @@ impl Connections {
         }
     }
 
-    pub fn register(&mut self) -> String {
+    pub fn register(&mut self) -> (String, Receiver<String>) {
         loop {
             let id = generate_id();
             if !self.connections.iter().any(|c| c.id == id) {
+                let (sender, receiver) = channel(64);
                 self.connections.push(Connection {
                     id: id.clone(),
-                    queue: Vec::new(),
+                    queue: sender,
                 });
-                return id;
+                return (id, receiver);
             }
         }
     }
@@ -38,27 +38,20 @@ impl Connections {
         self.connections.iter().any(|c| c.id == id)
     }
 
-    pub fn submit(&mut self, id: &str, song: &str) {
+    pub async fn submit(&mut self, id: &str, song: &str) {
         if let Some(c) = self.connections.iter_mut().find(|c| c.id == id) {
-            c.queue.push(song.to_owned())
-        }
-    }
-
-    pub fn retrieve_queue(&mut self, id: &str) -> Vec<String> {
-        match self.connections.iter_mut().find(|c| c.id == id) {
-            Some(c) => std::mem::take(&mut c.queue),
-            None => Vec::new(),
+            _ = c.queue.send(song.to_owned()).await;
         }
     }
 }
 
 pub struct Connection {
     id: String,
-    queue: Vec<String>,
+    queue: Sender<String>,
 }
 
-pub fn get() -> MutexGuard<'static, Connections> {
-    CONNECTIONS.lock().unwrap()
+pub async fn get() -> MutexGuard<'static, Connections> {
+    CONNECTIONS.lock().await
 }
 
 fn generate_id() -> String {

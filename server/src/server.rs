@@ -1,47 +1,24 @@
-use std::io::{self, Cursor};
-use std::sync::Arc;
-use std::thread::{self, JoinHandle};
-use std::time::Duration;
-
-use anyhow::{Result, anyhow};
-use ascii::AsciiString;
-use tiny_http::{Header, Method, Request, Response, Server};
+use anyhow::Result;
+use axum::extract::Path;
+use axum::http::StatusCode;
+use axum::response::{Html, IntoResponse};
+use axum::routing::get;
+use axum::{Form, Router};
+use serde::Deserialize;
+use tokio::net::TcpListener;
 
 use crate::connections;
 
 const ADDRESS: &str = "0.0.0.0:6969";
-const CONNECTION_COUNT: usize = 64;
 
-pub fn start() -> JoinHandle<()> {
-    thread::spawn(|| {
-        while let Err(e) = run_server() {
-            log::error!("webserver failed: {e}");
-            thread::sleep(Duration::from_millis(100));
-        }
-    })
-}
+pub async fn start() -> Result<()> {
+    let app = Router::new()
+        .route("/submit/{id}", get(handle_submit_get).post(handle_submit_post))
+        .fallback(handle_not_found);
 
-fn run_server() -> Result<()> {
     log::info!("starting webserver on {ADDRESS}");
-    let server = Server::http(ADDRESS).map_err(|e| anyhow!(e))?;
-    let server = Arc::new(server);
-
-    let mut handles = Vec::new();
-
-    for _ in 0..CONNECTION_COUNT {
-        let server = Arc::clone(&server);
-        handles.push(thread::spawn(move || {
-            for request in server.incoming_requests() {
-                if let Err(e) = handle_request(request) {
-                    log::error!("failed to handle request: {e}");
-                }
-            }
-        }));
-    }
-
-    for handle in handles {
-        _ = handle.join();
-    }
+    let listener = TcpListener::bind(ADDRESS).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
@@ -50,99 +27,31 @@ const HTML_NOT_FOUND: &str = include_str!("pages/404.html");
 const HTML_SUBMIT: &str = include_str!("pages/submit.html");
 const HTML_SUCCESS: &str = include_str!("pages/success.html");
 
-fn handle_request(request: Request) -> io::Result<()> {
-    log::info!("{} {}", request.method(), request.url());
-    match request.method() {
-        Method::Get => match request.url() {
-            url if url.starts_with("/submit/") => handle_submit_get(request),
-            _ => request.respond(Response::not_found()),
-        },
-        Method::Post => match request.url() {
-            url if url.starts_with("/submit/") => handle_submit_post(request),
-            _ => request.respond(Response::not_found()),
-        },
-        _ => request.respond(Response::empty(405)),
+async fn handle_submit_get(Path(id): Path<String>) -> impl IntoResponse {
+    log::info!("get /submit/{id}");
+    if !connections::get().await.exists(&id) {
+        return (StatusCode::BAD_REQUEST, "Invalid session").into_response();
     }
+    Html(HTML_SUBMIT).into_response()
 }
 
-fn handle_submit_get(request: Request) -> io::Result<()> {
-    let id = request.url()[8..].trim_end_matches('/');
-    if !connections::get().exists(id) {
-        return request.respond(Response::error("Invalid session"));
-    }
-    request.respond(Response::html(HTML_SUBMIT))
+#[derive(Deserialize)]
+struct SubmitPostForm {
+    id: String,
 }
 
-fn handle_submit_post(mut request: Request) -> io::Result<()> {
-    let id = {
-        let id = request.url()[8..].trim_end_matches('/');
-        if !connections::get().exists(id) {
-            return request.respond(Response::error("Invalid session"));
-        }
-        id.to_owned()
-    };
-
-    let mut params = String::new();
-    request.as_reader().read_to_string(&mut params)?;
-    let params = params.split('&');
-    for param in params {
-        let Some((key, value)) = param.split_once('=') else {
-            return request.respond(Response::bad_request());
-        };
-        if key == "id" && value.len() == 11 {
-            connections::get().submit(&id, value);
-            return request.respond(Response::html(HTML_SUCCESS));
-        }
+async fn handle_submit_post(
+    Path(id): Path<String>,
+    Form(form): Form<SubmitPostForm>,
+) -> impl IntoResponse {
+    log::info!("post /submit/{id}?id={}", form.id);
+    if form.id.len() != 11 {
+        return (StatusCode::BAD_REQUEST, "Invalid song ID").into_response();
     }
-
-    request.respond(Response::bad_request())
+    connections::get().await.submit(&id, &form.id).await;
+    Html(HTML_SUCCESS).into_response()
 }
 
-trait ResponseExt: Sized {
-    fn html(s: &str) -> Self;
-    fn not_found() -> Self;
-    fn error(msg: &str) -> Self;
-}
-
-impl ResponseExt for Response<Cursor<Vec<u8>>> {
-    fn html(s: &str) -> Self {
-        Self::from_string(s).with_header(Header {
-            field: "Content-Type".parse().unwrap(),
-            value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-        })
-    }
-
-    fn not_found() -> Self {
-        Self::html(HTML_NOT_FOUND).with_status_code(404)
-    }
-
-    fn error(msg: &str) -> Self {
-        Self::html(&format!(
-            r#"
-            <!DOCTYPE html>
-            <html lang="en">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Schmu - 404</title>
-            </head>
-            <body>
-                <h3>Error</h3>
-                <p>{msg}</p>
-            </body>
-            </html>
-            "#
-        ))
-        .with_status_code(500)
-    }
-}
-
-trait ResponseExt2: Sized {
-    fn bad_request() -> Self;
-}
-
-impl ResponseExt2 for Response<io::Empty> {
-    fn bad_request() -> Self {
-        Self::empty(400)
-    }
+async fn handle_not_found() -> impl IntoResponse {
+    (StatusCode::NOT_FOUND, Html(HTML_NOT_FOUND))
 }
