@@ -10,7 +10,7 @@ use raylib::prelude::*;
 use shared::misc::CallOnDrop;
 
 use crate::state::{self, ConnectionState};
-use crate::util::Event;
+use crate::util::{self, Event};
 
 pub struct UI {
     msg_tx: Sender<Message>,
@@ -136,7 +136,12 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
 
         if let ConnectionState::Connected { id } = state::get().connection_state() {
             if server_qrcode.is_none() || &server_qrcode_id != id {
-                generate_qr_texture(&mut rl, &thread, &mut server_qrcode, &make_url(&id));
+                generate_qr_texture(
+                    &mut rl,
+                    &thread,
+                    &mut server_qrcode,
+                    &util::submission_url(&id),
+                );
                 server_qrcode_id = id.to_owned();
             }
         }
@@ -291,7 +296,7 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
                 );
             }
             ConnectionState::Connected { id } => {
-                let url = make_url(&id);
+                let url = util::submission_url(&id);
 
                 let text_width = font_bold.measure_text(&url, FONT_SIZE_BOLD as f32, 0.0).x as i32;
                 let x = screen_width - text_width - 20;
@@ -397,16 +402,16 @@ fn generate_qr_texture<'a>(
     url: &str,
 ) {
     let qrcode = QrCode::new(url.as_bytes()).unwrap();
-    let image = qrcode.render::<Luma<u8>>().dark_color(Luma([255])).light_color(Luma([0])).quiet_zone(false).build();
+    let image = qrcode
+        .render::<Luma<u8>>()
+        .dark_color(Luma([255]))
+        .light_color(Luma([0]))
+        .quiet_zone(false)
+        .build();
     let mut buffer = Vec::new();
     let mut cursor = Cursor::new(&mut buffer);
     image.write_to(&mut cursor, ImageFormat::Png).unwrap();
     let image = Image::load_image_from_mem(".png", &buffer).unwrap();
     let texture = rl.load_texture_from_image(thread, &image).unwrap();
     *texture_out = Some(texture);
-}
-
-fn make_url(id: &str) -> String {
-    // TODO: change to hosted
-    format!("http://localhost:6969/submit/{id}")
 }

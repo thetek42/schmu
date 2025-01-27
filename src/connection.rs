@@ -8,7 +8,7 @@ use anyhow::Result;
 use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Error, Message, WebSocket};
 
-use crate::util::Event;
+use crate::util::{self, Event};
 
 pub struct Connection {
     msg_tx: Sender<ThreadMessage>,
@@ -121,6 +121,7 @@ impl ConnectionThread {
             if id.len() > 0 {
                 let id = id.to_owned();
                 log::info!("connected with id {id}");
+                log::info!("submission url: {}", util::submission_url(&id));
                 self.event_tx.send(Event::ServerHello { id }).unwrap();
             }
         } else if s.starts_with("push:") {

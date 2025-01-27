@@ -12,6 +12,11 @@ pub fn song_info_cache_location(id: &str) -> PathBuf {
     cache
 }
 
+pub fn submission_url(id: &str) -> String {
+    // TODO: change to hosted
+    format!("http://localhost:6969/submit/{id}")
+}
+
 pub enum Event {
     ServerHello { id: String },
     ConnError { msg: String },
