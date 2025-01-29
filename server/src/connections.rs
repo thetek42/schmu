@@ -1,5 +1,8 @@
 use rand::Rng;
-use tokio::sync::{mpsc::{channel, Receiver, Sender}, Mutex, MutexGuard};
+use tokio::sync::{
+    Mutex, MutexGuard,
+    mpsc::{Receiver, Sender, channel},
+};
 
 static CONNECTIONS: Mutex<Connections> = Mutex::const_new(Connections::new());
 
@@ -14,18 +17,22 @@ impl Connections {
         }
     }
 
-    pub fn register(&mut self) -> (String, Receiver<String>) {
-        loop {
-            let id = generate_id();
-            if !self.connections.iter().any(|c| c.id == id) {
-                let (sender, receiver) = channel(64);
-                self.connections.push(Connection {
-                    id: id.clone(),
-                    queue: sender,
-                });
-                return (id, receiver);
-            }
+    pub fn register(&mut self, id: Option<String>) -> (String, Receiver<String>) {
+        let mut id = match id {
+            Some(id) => id,
+            None => generate_id(),
+        };
+
+        while self.connections.iter().any(|c| c.id == id) {
+            id = generate_id();
         }
+
+        let (sender, receiver) = channel(64);
+        self.connections.push(Connection {
+            id: id.clone(),
+            queue: sender,
+        });
+        (id, receiver)
     }
 
     pub fn unregister(&mut self, id: &str) {

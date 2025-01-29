@@ -1,12 +1,15 @@
 use std::sync::mpsc;
 
-use connection::Connection;
-use util::Event;
+use clap::Parser;
 
+use crate::cli::Cli;
+use crate::connection::Connection;
 use crate::downloader::Downloader;
 use crate::player::Player;
 use crate::ui::UI;
+use crate::util::Event;
 
+mod cli;
 mod connection;
 mod downloader;
 mod player;
@@ -17,9 +20,11 @@ mod util;
 fn main() {
     shared::logger::init();
 
+    let cli = Cli::parse();
+
     let (event_tx, event_rx) = mpsc::channel();
 
-    let _connection = Connection::start(event_tx.clone());
+    let _connection = Connection::start(event_tx.clone(), cli.request_id);
     let _ui = UI::start(event_tx);
     let downloader = Downloader::start();
     let player = Player::start();

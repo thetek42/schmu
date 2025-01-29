@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.94"
+clap = { version = "4.5.27", features = ["derive"] }
 dirs = "5.0.1"
 image = "0.25.5"
 libmpv2 = "4.1.0"

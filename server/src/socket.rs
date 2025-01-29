@@ -1,5 +1,5 @@
-use anyhow::Result;
-use futures_util::{select, FutureExt, SinkExt, StreamExt};
+use anyhow::{Result, bail};
+use futures_util::{FutureExt, SinkExt, StreamExt, select};
 use shared::misc::CallOnDrop;
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::tungstenite::Message;
@@ -26,7 +26,22 @@ async fn handle_websocket(socket: TcpStream) -> Result<()> {
     let socket = tokio_tungstenite::accept_async(socket).await?;
     let (mut outgoing, mut incoming) = socket.split();
 
-    let (id, mut song_receiver) = connections::get().await.register();
+    let id = match incoming.next().await {
+        Some(Ok(Message::Text(t))) if t == "hello" => None,
+        Some(Ok(Message::Text(t))) if t.starts_with("hello:") => {
+            let request_id = &t[6..];
+            if is_valid_id_request(request_id) {
+                bail!("invalid id request");
+            } else {
+                Some(request_id.to_owned())
+            }
+        }
+        Some(Ok(_)) => bail!("invalid hello message received after connect"),
+        Some(Err(e)) => bail!("error after connect: {e}"),
+        None => bail!("no hello message received after connect"),
+    };
+
+    let (id, mut song_receiver) = connections::get().await.register(id);
     let _unregister_guard = CallOnDrop::new(|| {
         let id = id.clone();
         tokio::spawn(async move { connections::get().await.unregister(&id) })
@@ -62,4 +77,9 @@ async fn handle_websocket(socket: TcpStream) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn is_valid_id_request(id: &str) -> bool {
+    let valid_char = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    id.len() >= 4 && id.chars().any(|c| !valid_char(c))
 }

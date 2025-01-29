@@ -16,11 +16,11 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn start(event_tx: Sender<Event>) -> Self {
+    pub fn start(event_tx: Sender<Event>, request_id: Option<String>) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
 
         log::info!("starting player");
-        let thread = thread::spawn(move || ConnectionThread::run(msg_rx, event_tx));
+        let thread = thread::spawn(move || ConnectionThread::run(msg_rx, event_tx, request_id));
 
         Self {
             msg_tx,
@@ -57,8 +57,8 @@ struct ConnectionThread {
 const ADDRESS: &str = "ws://localhost:23857";
 
 impl ConnectionThread {
-    fn run(msg_rx: Receiver<ThreadMessage>, event_tx: Sender<Event>) {
-        let socket = match Self::open_socket() {
+    fn run(msg_rx: Receiver<ThreadMessage>, event_tx: Sender<Event>, request_id: Option<String>) {
+        let mut socket = match Self::open_socket() {
             Ok(socket) => socket,
             Err(e) => {
                 log::info!("failed to connect to server: {e}");
@@ -67,6 +67,20 @@ impl ConnectionThread {
                 return;
             }
         };
+
+        let msg = match request_id {
+            Some(request_id) => {
+                log::info!("requesting id {request_id}");
+                format!("hello:{request_id}")
+            }
+            None => format!("hello"),
+        };
+        if let Err(e) = socket.send(Message::Text(msg)) {
+            log::info!("failed to send hello to server: {e}");
+            let msg = e.to_string();
+            event_tx.send(Event::ConnError { msg }).unwrap();
+            return;
+        }
 
         let mut connection = Self {
             socket,
