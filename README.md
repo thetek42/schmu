@@ -11,13 +11,13 @@ the graphical user interface, which directs users to the song submission page. T
 search for a song, which will then be added to the queue of the client. After the client finishes
 downloading the song from YouTube Music, it will be played.
 
-### Prerequisites
+## Prerequisites
 
 These applications must be installed on your system in addition to the Schmu client:
 - MPV
 - yt-dlp
 
-### Compiling
+## Compiling
 
 Prerequisites:
 - Rust
@@ -27,24 +27,3 @@ git clone https://git.tjdev.de/thetek/schmu.git
 cd schmu/client
 cargo build --release
 ```
-
-## Server
-
-In case you want to host the server by yourself:
-
-Prerequisites:
-- Rust
-
-Server setup:
-- `git clone https://git.tjdev.de/thetek/schmu.git`
-- `cd schmu`
-- Modify the server address in `shared/src/consts.rs`
-- Obtain a YouTube Music cookie file:
-  - Open your browser dev tools, go to network tab
-  - Go to `music.youtube.com`
-  - Find a post request to `music.youtube.com`
-  - Copy the contents of the `Cookie` header in the request
-  - Put them into the file `server/cookie.txt`
-- `cd server`
-- `cargo build --release`
-- `target/release/schmu-server`
