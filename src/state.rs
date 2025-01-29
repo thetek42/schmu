@@ -32,6 +32,16 @@ impl State {
     }
 
     pub fn enqueue(&mut self, song: Song) {
+        if let Some(ref playing) = self.playing
+            && playing.song.id == song.id
+        {
+            return;
+        }
+
+        if self.queue.iter().any(|s| s.id == song.id) {
+            return;
+        }
+
         self.queue.push_back(song);
     }
 
