@@ -54,8 +54,6 @@ struct ConnectionThread {
     socket: WebSocket<MaybeTlsStream<TcpStream>>,
 }
 
-const ADDRESS: &str = "ws://localhost:23857";
-
 impl ConnectionThread {
     fn run(msg_rx: Receiver<ThreadMessage>, event_tx: Sender<Event>, request_id: Option<String>) {
         let mut socket = match Self::open_socket() {
@@ -149,7 +147,13 @@ impl ConnectionThread {
     }
 
     fn open_socket() -> Result<WebSocket<MaybeTlsStream<TcpStream>>> {
-        let (socket, _) = tungstenite::connect(ADDRESS)?;
+        let address = format!(
+            "ws://{}:{}",
+            shared::consts::SERVER_ADDRESS,
+            shared::consts::WEBSOCKET_PORT,
+        );
+
+        let (socket, _) = tungstenite::connect(&address)?;
 
         match socket.get_ref() {
             MaybeTlsStream::Plain(socket) => socket.set_nonblocking(true)?,

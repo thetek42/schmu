@@ -13,8 +13,11 @@ pub fn song_info_cache_location(id: &str) -> PathBuf {
 }
 
 pub fn submission_url(id: &str) -> String {
-    // TODO: change to hosted
-    format!("http://localhost:6969/submit/{id}")
+    format!(
+        "http://{}:{}/submit/{id}",
+        shared::consts::SERVER_ADDRESS,
+        shared::consts::WEBSERVER_PORT,
+    )
 }
 
 pub enum Event {

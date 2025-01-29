@@ -9,7 +9,7 @@ client receives a unique ID. In order to use a consistent or simply meaningful I
 an ID using the `--request-id` command line parameter. This ID is then used to display a QR code in
 the graphical user interface, which directs users to the song submission page. There, they can
 search for a song, which will then be added to the queue of the client. After the client finishes
-downloading the song, it will be played.
+downloading the song from YouTube Music, it will be played.
 
 ### Prerequisites
 
@@ -24,7 +24,7 @@ Prerequisites:
 
 ```
 git clone https://git.tjdev.de/thetek/schmu.git
-cd schmu
+cd schmu/client
 cargo build --release
 ```
 
@@ -37,15 +37,14 @@ Prerequisites:
 
 Server setup:
 - `git clone https://git.tjdev.de/thetek/schmu.git`
-- `cd schmu/server`
-- Obtain a cookie file:
+- `cd schmu`
+- Modify the server address in `shared/src/consts.rs`
+- Obtain a YouTube Music cookie file:
   - Open your browser dev tools, go to network tab
   - Go to `music.youtube.com`
   - Find a post request to `music.youtube.com`
   - Copy the contents of the `Cookie` header in the request
-  - Put them into the file `cookie.txt` (within the `server` directory)
+  - Put them into the file `server/cookie.txt`
+- `cd server`
 - `cargo build --release`
-- `../target/release/server`
-
-Other modifications:
-- Within your client, change out the address of the official server to your own server address.
+- `target/release/schmu-server`
