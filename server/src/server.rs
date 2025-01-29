@@ -1,20 +1,22 @@
 use anyhow::Result;
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse};
 use axum::routing::get;
-use axum::{Form, Router};
+use axum::{Form, Json, Router};
 use serde::Deserialize;
 use tokio::net::TcpListener;
 
 use crate::connections;
+use crate::ytapi;
 
 const ADDRESS: &str = "0.0.0.0:6969";
 
 pub async fn start() -> Result<()> {
     let app = Router::new()
-        .route("/submit/{id}", get(handle_submit_get).post(handle_submit_post))
-        .fallback(handle_not_found);
+        .route("/submit/{id}", get(get_submit).post(post_submit))
+        .route("/ytapi/search", get(ytapi_search))
+        .fallback(not_found);
 
     log::info!("starting webserver on {ADDRESS}");
     let listener = TcpListener::bind(ADDRESS).await?;
@@ -27,7 +29,7 @@ const HTML_NOT_FOUND: &str = include_str!("pages/404.html");
 const HTML_SUBMIT: &str = include_str!("pages/submit.html");
 const HTML_SUCCESS: &str = include_str!("pages/success.html");
 
-async fn handle_submit_get(Path(id): Path<String>) -> impl IntoResponse {
+async fn get_submit(Path(id): Path<String>) -> impl IntoResponse {
     log::info!("get /submit/{id}");
     if !connections::get().await.exists(&id) {
         return (StatusCode::BAD_REQUEST, "Invalid session").into_response();
@@ -35,12 +37,7 @@ async fn handle_submit_get(Path(id): Path<String>) -> impl IntoResponse {
     Html(HTML_SUBMIT).into_response()
 }
 
-#[derive(Deserialize)]
-struct SubmitPostForm {
-    id: String,
-}
-
-async fn handle_submit_post(
+async fn post_submit(
     Path(id): Path<String>,
     Form(form): Form<SubmitPostForm>,
 ) -> impl IntoResponse {
@@ -52,6 +49,27 @@ async fn handle_submit_post(
     Html(HTML_SUCCESS).into_response()
 }
 
-async fn handle_not_found() -> impl IntoResponse {
+async fn not_found() -> impl IntoResponse {
     (StatusCode::NOT_FOUND, Html(HTML_NOT_FOUND))
+}
+
+async fn ytapi_search(Query(query): Query<YtapiSearchQuery>) -> impl IntoResponse {
+    log::info!("post /ytapi/search?query={}", query.query);
+    match ytapi::search(&query.query).await {
+        Ok(songs) => Json(songs).into_response(),
+        Err(e) => {
+            log::warn!("failed to search on youtube: {e:?}");
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(())).into_response()
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct SubmitPostForm {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct YtapiSearchQuery {
+    query: String,
 }
