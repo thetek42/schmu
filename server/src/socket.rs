@@ -6,11 +6,10 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::connections;
 
-const ADDRESS: &str = "0.0.0.0:23857";
-
 pub async fn start() -> Result<()> {
-    log::info!("starting socket handler on {ADDRESS}");
-    let listener = TcpListener::bind(ADDRESS).await?;
+    let address = format!("0.0.0.0:{}", shared::consts::WEBSOCKET_PORT_SERVER);
+    log::info!("starting socket handler on {address}");
+    let listener = TcpListener::bind(&address).await?;
 
     while let Ok((stream, _)) = listener.accept().await {
         tokio::spawn(handle_websocket(stream));

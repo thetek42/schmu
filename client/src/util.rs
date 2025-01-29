@@ -16,7 +16,7 @@ pub fn submission_url(id: &str) -> String {
     format!(
         "http://{}:{}/submit/{id}",
         shared::consts::SERVER_ADDRESS,
-        shared::consts::WEBSERVER_PORT,
+        shared::consts::WEBSERVER_PORT_PUBLIC,
     )
 }
 

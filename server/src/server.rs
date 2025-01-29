@@ -10,16 +10,15 @@ use tokio::net::TcpListener;
 use crate::connections;
 use crate::ytapi;
 
-const ADDRESS: &str = "0.0.0.0:6969";
-
 pub async fn start() -> Result<()> {
     let app = Router::new()
         .route("/submit/{id}", get(get_submit).post(post_submit))
         .route("/ytapi/search", get(ytapi_search))
         .fallback(not_found);
 
-    log::info!("starting webserver on {ADDRESS}");
-    let listener = TcpListener::bind(ADDRESS).await?;
+    let address = format!("0.0.0.0:{}", shared::consts::WEBSERVER_PORT_SERVER);
+    log::info!("starting webserver on {address}");
+    let listener = TcpListener::bind(&address).await?;
     axum::serve(listener, app).await?;
 
     Ok(())

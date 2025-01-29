@@ -150,7 +150,7 @@ impl ConnectionThread {
         let address = format!(
             "ws://{}:{}",
             shared::consts::SERVER_ADDRESS,
-            shared::consts::WEBSOCKET_PORT,
+            shared::consts::WEBSOCKET_PORT_PUBLIC,
         );
 
         let (socket, _) = tungstenite::connect(&address)?;
