@@ -7,5 +7,5 @@ mod ytapi;
 async fn main() {
     shared::logger::init();
     let res = server::start().await;
-    log::error!("server handling quit: {res:?}");
+    log::error!("server quit: {res:?}");
 }
