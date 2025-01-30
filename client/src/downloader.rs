@@ -310,8 +310,8 @@ impl AudioDownloaderThread {
             .arg("bestaudio[ext=m4a]")
             .arg("--extract-audio")
             .arg("--output")
-            .arg(&entry.audio_cache_location())
-            .arg(&entry.youtube_url())
+            .arg(entry.audio_cache_location())
+            .arg(entry.youtube_url())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());

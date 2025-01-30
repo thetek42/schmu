@@ -86,7 +86,7 @@ impl ConnectionThread {
                 log::info!("requesting id {request_id}");
                 format!("hello:{request_id}")
             }
-            None => format!("hello"),
+            None => "hello".to_owned(),
         };
         if let Err(e) = socket.send(Message::Text(msg)) {
             log::info!("failed to send hello to server: {e}");
@@ -145,9 +145,8 @@ impl ConnectionThread {
     }
 
     fn handle_message(&self, s: &str) {
-        if s.starts_with("hello:") {
-            let id = &s[6..];
-            if id.len() > 0 {
+        if let Some(id) = s.strip_prefix("hello:") {
+            if !id.is_empty() {
                 let id = id.to_owned();
                 log::info!("connected with id {id}");
                 log::info!(
@@ -156,8 +155,7 @@ impl ConnectionThread {
                 );
                 self.event_tx.send(Event::ServerHello { id }).unwrap();
             }
-        } else if s.starts_with("push:") {
-            let song_id = &s[5..];
+        } else if let Some(song_id) = s.strip_prefix("push:") {
             if song_id.len() == 11 {
                 let song_id = song_id.to_owned();
                 log::info!("received new song {song_id}");

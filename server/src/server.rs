@@ -74,7 +74,7 @@ async fn ytapi_search(Query(query): Query<YtapiSearchQuery>) -> impl IntoRespons
 
 async fn websocket(ws: WebSocketUpgrade) -> impl IntoResponse {
     log::info!("websocket /ws");
-    ws.on_upgrade(move |socket| socket::handle(socket))
+    ws.on_upgrade(socket::handle)
 }
 
 #[derive(Deserialize)]

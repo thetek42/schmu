@@ -1,7 +1,7 @@
 use rand::Rng;
 use tokio::sync::{
+    mpsc::{channel, Receiver, Sender},
     Mutex, MutexGuard,
-    mpsc::{Receiver, Sender, channel},
 };
 
 static CONNECTIONS: Mutex<Connections> = Mutex::const_new(Connections::new());

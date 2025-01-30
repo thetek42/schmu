@@ -145,7 +145,7 @@ fn ui(
                     &mut rl,
                     &thread,
                     &mut server_qrcode,
-                    &util::submission_url(&id, &server_address, server_port),
+                    &util::submission_url(id, &server_address, server_port),
                 );
                 server_qrcode_id = id.to_owned();
             }
@@ -301,7 +301,7 @@ fn ui(
                 );
             }
             ConnectionState::Connected { id } => {
-                let url = util::submission_url(&id, &server_address, server_port);
+                let url = util::submission_url(id, &server_address, server_port);
 
                 let text_width = font_bold.measure_text(&url, FONT_SIZE_BOLD as f32, 0.0).x as i32;
                 let x = screen_width - text_width - 20;
@@ -371,7 +371,7 @@ impl ThumbnailStore {
                 let image = Image::load_image_from_mem(".png", &song.thumbnail).unwrap();
                 let mut texture = rl.load_texture_from_image(thread, &image).unwrap();
                 texture.gen_texture_mipmaps();
-                texture.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
+                texture.set_texture_filter(thread, TextureFilter::TEXTURE_FILTER_BILINEAR);
                 entry.insert(texture);
             }
         }
@@ -379,7 +379,7 @@ impl ThumbnailStore {
 
     fn default_texture(rl: &mut RaylibHandle, thread: &RaylibThread) -> Texture2D {
         let image = Image::gen_image_color(48, 48, Color::new(20, 20, 20, 255));
-        rl.load_texture_from_image(&thread, &image).unwrap()
+        rl.load_texture_from_image(thread, &image).unwrap()
     }
 }
 
@@ -400,10 +400,10 @@ fn draw_thumbnail(x: i32, y: i32, size: i32, texture: &Texture2D, draw: &mut Ray
     );
 }
 
-fn generate_qr_texture<'a>(
+fn generate_qr_texture(
     rl: &mut RaylibHandle,
     thread: &RaylibThread,
-    texture_out: &'a mut Option<Texture2D>,
+    texture_out: &mut Option<Texture2D>,
     url: &str,
 ) {
     let qrcode = QrCode::new(url.as_bytes()).unwrap();
