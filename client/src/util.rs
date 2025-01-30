@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::PathBuf;
 
 pub fn audio_cache_location(id: &str) -> PathBuf {
@@ -13,11 +14,15 @@ pub fn song_info_cache_location(id: &str) -> PathBuf {
 }
 
 pub fn submission_url(id: &str) -> String {
-    format!(
-        "http://{}:{}/submit/{id}",
-        shared::consts::SERVER_ADDRESS,
-        shared::consts::SERVER_PORT_PUBLIC,
-    )
+    let mut s = String::new();
+    match shared::consts::SERVER_PORT_PUBLIC {
+        80 => _ = write!(s, "http://{}", shared::consts::SERVER_ADDRESS),
+        443 => _ = write!(s, "https://{}", shared::consts::SERVER_ADDRESS),
+        port => _ = write!(s, "http://{}:{port}", shared::consts::SERVER_ADDRESS),
+    }
+    s.push_str("/submit/");
+    s.push_str(id);
+    s
 }
 
 pub enum Event {
