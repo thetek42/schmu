@@ -20,5 +20,4 @@
 7. `target/release/schmu-server`
 
 Instead of modifying the source code and providing a cookie file in steps 3 and 4, you can also set
-the `SCHMU_SERVER_WEBSOCKET_PORT`, `SCHMU_SERVER_WEBSERVER_PORT` and `SCHMU_SERVER_YTAPI_COOKIE`
-environment variables.
+the `SCHMU_SERVER_PORT` and `SCHMU_SERVER_YTAPI_COOKIE` environment variables.

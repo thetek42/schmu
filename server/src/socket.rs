@@ -1,35 +1,17 @@
-use std::env;
-
-use anyhow::{Result, bail};
-use futures_util::{FutureExt, SinkExt, StreamExt, select};
+use anyhow::{bail, Result};
+use axum::extract::ws::{Message, WebSocket};
+use futures_util::{select, FutureExt, SinkExt, StreamExt};
 use shared::misc::CallOnDrop;
-use tokio::net::{TcpListener, TcpStream};
-use tokio_tungstenite::tungstenite::Message;
 
 use crate::connections;
 
-pub async fn start() -> Result<()> {
-    let port = match env::var("SCHMU_SERVER_WEBSOCKET_PORT") {
-        Ok(port) => port.parse().unwrap(),
-        Err(_) => shared::consts::WEBSOCKET_PORT_SERVER,
-    };
-
-    let address = format!("0.0.0.0:{port}");
-    log::info!("starting socket handler on {address}");
-    let listener = TcpListener::bind(&address).await?;
-
-    while let Ok((stream, _)) = listener.accept().await {
-        tokio::spawn(handle_websocket(stream));
+pub async fn handle(socket: WebSocket) {
+    if let Err(e) = try_handle(socket).await {
+        log::error!("error handling websocket: {e}");
     }
-
-    Ok(())
 }
 
-async fn handle_websocket(socket: TcpStream) -> Result<()> {
-    let peer = socket.peer_addr().unwrap();
-    log::info!("new connection from {peer}");
-
-    let socket = tokio_tungstenite::accept_async(socket).await?;
+async fn try_handle(socket: WebSocket) -> Result<()> {
     let (mut outgoing, mut incoming) = socket.split();
 
     let id = match incoming.next().await {
@@ -52,7 +34,7 @@ async fn handle_websocket(socket: TcpStream) -> Result<()> {
         let id = id.clone();
         tokio::spawn(async move { connections::get().await.unregister(&id) })
     });
-    log::info!("assigned id {id} to {peer}");
+    log::info!("assigned id {id}");
     outgoing
         .send(Message::Text(format!("hello:{id}").into()))
         .await?;
@@ -62,13 +44,13 @@ async fn handle_websocket(socket: TcpStream) -> Result<()> {
             res = incoming.next().fuse() => match res {
                 Some(Ok(Message::Ping(d))) => outgoing.send(Message::Pong(d)).await?,
                 Some(Ok(Message::Close(_))) => {
-                    log::info!("closing connection to {peer}");
+                    log::info!("closing connection to {id}");
                     break;
                 }
                 Some(Ok(_)) => (),
                 Some(Err(e)) => Err(e)?,
                 None => {
-                    log::info!("no more message from {peer}, closing connection");
+                    log::info!("no more message from {id}, closing connection");
                     break;
                 },
             },

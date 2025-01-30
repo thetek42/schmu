@@ -1,26 +1,28 @@
 use std::env;
 
 use anyhow::Result;
-use axum::extract::{Path, Query};
+use axum::extract::{Path, Query, WebSocketUpgrade};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse};
-use axum::routing::get;
+use axum::routing::{any, get};
 use axum::{Form, Json, Router};
 use serde::Deserialize;
 use tokio::net::TcpListener;
 
 use crate::connections;
+use crate::socket;
 use crate::ytapi;
 
 pub async fn start() -> Result<()> {
     let app = Router::new()
         .route("/submit/{id}", get(get_submit).post(post_submit))
         .route("/ytapi/search", get(ytapi_search))
+        .route("/ws", any(websocket))
         .fallback(not_found);
 
-    let port = match env::var("SCHMU_SERVER_WEBSERVER_PORT") {
+    let port = match env::var("SCHMU_SERVER_PORT") {
         Ok(port) => port.parse().unwrap(),
-        Err(_) => shared::consts::WEBSERVER_PORT_SERVER,
+        Err(_) => shared::consts::SERVER_PORT_SERVER,
     };
 
     let address = format!("0.0.0.0:{port}");
@@ -68,6 +70,11 @@ async fn ytapi_search(Query(query): Query<YtapiSearchQuery>) -> impl IntoRespons
             (StatusCode::INTERNAL_SERVER_ERROR, Json(())).into_response()
         }
     }
+}
+
+async fn websocket(ws: WebSocketUpgrade) -> impl IntoResponse {
+    log::info!("websocket /ws");
+    ws.on_upgrade(move |socket| socket::handle(socket))
 }
 
 #[derive(Deserialize)]

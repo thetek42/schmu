@@ -148,9 +148,9 @@ impl ConnectionThread {
 
     fn open_socket() -> Result<WebSocket<MaybeTlsStream<TcpStream>>> {
         let address = format!(
-            "ws://{}:{}",
+            "ws://{}:{}/ws",
             shared::consts::SERVER_ADDRESS,
-            shared::consts::WEBSOCKET_PORT_PUBLIC,
+            shared::consts::SERVER_PORT_PUBLIC,
         );
 
         let (socket, _) = tungstenite::connect(&address)?;

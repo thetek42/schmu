@@ -5,12 +5,11 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.94"
-axum = "0.8.1"
+axum = { version = "0.8.1", features = ["ws"] }
 futures-util = "0.3.31"
 log = "0.4.22"
 rand = "0.8.5"
 serde = { version = "1.0.217", features = ["derive"] }
 shared = { path = "../shared" }
 tokio = { version = "1.43.0", features = ["full"] }
-tokio-tungstenite = "0.26.1"
 ytmapi-rs = { version = "0.0.17", features = ["simplified-queries"] }
