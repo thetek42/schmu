@@ -2,8 +2,8 @@ use std::env;
 
 use anyhow::Result;
 use serde::Serialize;
-use ytmapi_rs::YtMusic;
 use ytmapi_rs::common::YoutubeID;
+use ytmapi_rs::YtMusic;
 
 pub async fn search(query: &str) -> Result<Vec<Song>> {
     let ytm = match env::var("SCHMU_SERVER_YTAPI_COOKIE") {
@@ -19,7 +19,11 @@ pub async fn search(query: &str) -> Result<Vec<Song>> {
             id: song.video_id.get_raw().to_owned(),
             title: song.title,
             artist: song.artist,
-            thumbnail: song.thumbnails.into_iter().next().map(|x| x.url),
+            thumbnail: song
+                .thumbnails
+                .into_iter()
+                .max_by_key(|x| x.height)
+                .map(|x| x.url),
         })
         .collect();
 
