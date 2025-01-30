@@ -13,12 +13,12 @@ pub fn song_info_cache_location(id: &str) -> PathBuf {
     cache
 }
 
-pub fn submission_url(id: &str) -> String {
+pub fn submission_url(id: &str, server_address: &str, server_port: u16) -> String {
     let mut s = String::new();
-    match shared::consts::SERVER_PORT_PUBLIC {
-        80 => _ = write!(s, "http://{}", shared::consts::SERVER_ADDRESS),
-        443 => _ = write!(s, "https://{}", shared::consts::SERVER_ADDRESS),
-        port => _ = write!(s, "http://{}:{port}", shared::consts::SERVER_ADDRESS),
+    match server_port {
+        80 => _ = write!(s, "http://{server_address}"),
+        443 => _ = write!(s, "https://{server_address}"),
+        port => _ = write!(s, "http://{server_address}:{port}"),
     }
     s.push_str("/submit/");
     s.push_str(id);

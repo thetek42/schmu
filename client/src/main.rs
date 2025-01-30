@@ -26,8 +26,14 @@ fn main() {
 
     let (event_tx, event_rx) = mpsc::channel();
 
-    let _connection = Connection::start(event_tx.clone(), cli.request_id);
-    let _ui = UI::start(event_tx);
+    let _connection = Connection::start(
+        event_tx.clone(),
+        cli.request_id,
+        cli.server_address.clone(),
+        cli.server_port,
+    );
+
+    let _ui = UI::start(event_tx, cli.server_address, cli.server_port);
     let downloader = Downloader::start();
     let player = Player::start();
 

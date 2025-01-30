@@ -18,11 +18,11 @@ pub struct UI {
 }
 
 impl UI {
-    pub fn start(event_tx: Sender<Event>) -> Self {
+    pub fn start(event_tx: Sender<Event>, server_address: String, server_port: u16) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
 
         log::info!("starting ui");
-        let thread = thread::spawn(move || ui(msg_rx, event_tx));
+        let thread = thread::spawn(move || ui(msg_rx, event_tx, server_address, server_port));
 
         Self {
             msg_tx,
@@ -57,7 +57,12 @@ const FONT_SIZE_BOLD: i32 = 22;
 const FONT_DATA_LIGHT: &[u8] = include_bytes!("fonts/Inter-Light.ttf");
 const FONT_SIZE_LIGHT: i32 = 64;
 
-fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
+fn ui(
+    msg_rx: Receiver<Message>,
+    event_tx: Sender<Event>,
+    server_address: String,
+    server_port: u16,
+) {
     let _closed_tx_guard = CallOnDrop::new(|| event_tx.send(Event::UIQuit));
 
     /* raylib initialisation **********************************************************************/
@@ -140,7 +145,7 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
                     &mut rl,
                     &thread,
                     &mut server_qrcode,
-                    &util::submission_url(&id),
+                    &util::submission_url(&id, &server_address, server_port),
                 );
                 server_qrcode_id = id.to_owned();
             }
@@ -296,7 +301,7 @@ fn ui(msg_rx: Receiver<Message>, event_tx: Sender<Event>) {
                 );
             }
             ConnectionState::Connected { id } => {
-                let url = util::submission_url(&id);
+                let url = util::submission_url(&id, &server_address, server_port);
 
                 let text_width = font_bold.measure_text(&url, FONT_SIZE_BOLD as f32, 0.0).x as i32;
                 let x = screen_width - text_width - 20;

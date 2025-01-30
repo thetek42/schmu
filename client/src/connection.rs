@@ -16,11 +16,18 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn start(event_tx: Sender<Event>, request_id: Option<String>) -> Self {
+    pub fn start(
+        event_tx: Sender<Event>,
+        request_id: Option<String>,
+        server_address: String,
+        server_port: u16,
+    ) -> Self {
         let (msg_tx, msg_rx) = mpsc::channel();
 
         log::info!("starting player");
-        let thread = thread::spawn(move || ConnectionThread::run(msg_rx, event_tx, request_id));
+        let thread = thread::spawn(move || {
+            ConnectionThread::run(msg_rx, event_tx, request_id, server_address, server_port)
+        });
 
         Self {
             msg_tx,
@@ -52,11 +59,19 @@ struct ConnectionThread {
     msg_rx: Receiver<ThreadMessage>,
     event_tx: Sender<Event>,
     socket: WebSocket<MaybeTlsStream<TcpStream>>,
+    server_address: String,
+    server_port: u16,
 }
 
 impl ConnectionThread {
-    fn run(msg_rx: Receiver<ThreadMessage>, event_tx: Sender<Event>, request_id: Option<String>) {
-        let mut socket = match Self::open_socket() {
+    fn run(
+        msg_rx: Receiver<ThreadMessage>,
+        event_tx: Sender<Event>,
+        request_id: Option<String>,
+        server_address: String,
+        server_port: u16,
+    ) {
+        let mut socket = match Self::open_socket(&server_address, server_port) {
             Ok(socket) => socket,
             Err(e) => {
                 log::info!("failed to connect to server: {e}");
@@ -84,6 +99,8 @@ impl ConnectionThread {
             socket,
             msg_rx,
             event_tx,
+            server_address,
+            server_port,
         };
 
         loop {
@@ -133,7 +150,10 @@ impl ConnectionThread {
             if id.len() > 0 {
                 let id = id.to_owned();
                 log::info!("connected with id {id}");
-                log::info!("submission url: {}", util::submission_url(&id));
+                log::info!(
+                    "submission url: {}",
+                    util::submission_url(&id, &self.server_address, self.server_port)
+                );
                 self.event_tx.send(Event::ServerHello { id }).unwrap();
             }
         } else if s.starts_with("push:") {
@@ -146,8 +166,14 @@ impl ConnectionThread {
         }
     }
 
-    fn open_socket() -> Result<WebSocket<MaybeTlsStream<TcpStream>>> {
-        let address = format!("wss://{}:443/ws", shared::consts::SERVER_ADDRESS,);
+    fn open_socket(
+        server_address: &str,
+        server_port: u16,
+    ) -> Result<WebSocket<MaybeTlsStream<TcpStream>>> {
+        let address = match server_port {
+            443 => format!("wss://{server_address}:443/ws"),
+            port => format!("ws://{server_address}:{port}/ws"),
+        };
 
         log::info!("{address}");
 
