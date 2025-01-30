@@ -147,16 +147,15 @@ impl ConnectionThread {
     }
 
     fn open_socket() -> Result<WebSocket<MaybeTlsStream<TcpStream>>> {
-        let address = format!(
-            "ws://{}:{}/ws",
-            shared::consts::SERVER_ADDRESS,
-            shared::consts::SERVER_PORT_PUBLIC,
-        );
+        let address = format!("wss://{}:443/ws", shared::consts::SERVER_ADDRESS,);
+
+        log::info!("{address}");
 
         let (socket, _) = tungstenite::connect(&address)?;
 
         match socket.get_ref() {
             MaybeTlsStream::Plain(socket) => socket.set_nonblocking(true)?,
+            MaybeTlsStream::NativeTls(socket) => socket.get_ref().set_nonblocking(true)?,
             _ => panic!("tls not supported yet lmao"),
         }
 
