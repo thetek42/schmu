@@ -1,7 +1,10 @@
+use std::time::Duration;
+
 use anyhow::{bail, Result};
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{select, FutureExt, SinkExt, StreamExt};
 use shared::misc::CallOnDrop;
+use tokio::time::sleep;
 
 use crate::connections;
 
@@ -42,7 +45,6 @@ async fn try_handle(socket: WebSocket) -> Result<()> {
     loop {
         select! {
             res = incoming.next().fuse() => match res {
-                Some(Ok(Message::Ping(d))) => outgoing.send(Message::Pong(d)).await?,
                 Some(Ok(Message::Close(_))) => {
                     log::info!("closing connection to {id}");
                     break;
@@ -60,6 +62,10 @@ async fn try_handle(socket: WebSocket) -> Result<()> {
                 outgoing
                     .send(Message::Text(format!("push:{song}").into()))
                     .await?;
+            },
+
+            _ = sleep(Duration::from_secs(1)).fuse() => {
+                outgoing.send(Message::Ping(Vec::new().into())).await?;
             }
         }
     }
