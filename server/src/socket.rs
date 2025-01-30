@@ -1,3 +1,5 @@
+use std::env;
+
 use anyhow::{Result, bail};
 use futures_util::{FutureExt, SinkExt, StreamExt, select};
 use shared::misc::CallOnDrop;
@@ -7,7 +9,12 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::connections;
 
 pub async fn start() -> Result<()> {
-    let address = format!("0.0.0.0:{}", shared::consts::WEBSOCKET_PORT_SERVER);
+    let port = match env::var("SCHMU_SERVER_WEBSOCKET_PORT") {
+        Ok(port) => port.parse().unwrap(),
+        Err(_) => shared::consts::WEBSOCKET_PORT_SERVER,
+    };
+
+    let address = format!("0.0.0.0:{port}");
     log::info!("starting socket handler on {address}");
     let listener = TcpListener::bind(&address).await?;
 

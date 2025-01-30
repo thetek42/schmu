@@ -1,12 +1,16 @@
+use std::env;
+
 use anyhow::Result;
 use serde::Serialize;
 use ytmapi_rs::YtMusic;
 use ytmapi_rs::common::YoutubeID;
 
-const COOKIE: &str = include_str!("../cookie.txt");
-
 pub async fn search(query: &str) -> Result<Vec<Song>> {
-    let ytm = YtMusic::from_cookie(COOKIE).await?;
+    let ytm = match env::var("SCHMU_SERVER_YTAPI_COOKIE") {
+        Ok(cookie) => YtMusic::from_cookie(cookie).await?,
+        Err(_) => YtMusic::from_cookie_file("./cookie.txt").await?,
+    };
+
     let songs = ytm.search_songs(query).await?;
 
     let result = songs

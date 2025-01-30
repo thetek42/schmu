@@ -1,3 +1,5 @@
+use std::env;
+
 use anyhow::Result;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
@@ -16,7 +18,12 @@ pub async fn start() -> Result<()> {
         .route("/ytapi/search", get(ytapi_search))
         .fallback(not_found);
 
-    let address = format!("0.0.0.0:{}", shared::consts::WEBSERVER_PORT_SERVER);
+    let port = match env::var("SCHMU_SERVER_WEBSERVER_PORT") {
+        Ok(port) => port.parse().unwrap(),
+        Err(_) => shared::consts::WEBSERVER_PORT_SERVER,
+    };
+
+    let address = format!("0.0.0.0:{port}");
     log::info!("starting webserver on {address}");
     let listener = TcpListener::bind(&address).await?;
     axum::serve(listener, app).await?;
