@@ -19,11 +19,6 @@ pub async fn search(query: &str) -> Result<Vec<Song>> {
             id: song.video_id.get_raw().to_owned(),
             title: song.title,
             artist: song.artist,
-            thumbnail: song
-                .thumbnails
-                .into_iter()
-                .max_by_key(|x| x.height)
-                .map(|x| x.url),
         })
         .collect();
 
@@ -35,5 +30,4 @@ pub struct Song {
     pub id: String,
     pub title: String,
     pub artist: String,
-    pub thumbnail: Option<String>,
 }

@@ -73,11 +73,18 @@
             cursor: pointer;
         }
 
-        .thumbnail {
+        .thumbnaildiv {
             border-radius: .5rem;
             height: 60px;
+            overflow: hidden;
             margin-right: 1rem;
+            text-align: center;
             width: 60px;
+        }
+
+        .thumbnail {
+            height: 100%;
+            margin: 0 -100%;
         }
 
         .title-and-artist {
@@ -127,15 +134,29 @@
             }
         }
 
-        function fillResults(songs) {
+        function fillResultsWithText(text, color) {
             const resultsDiv = document.getElementById("results");
+            resultsDiv.style.color = color;
+            resultsDiv.textContent = text;
+        }
+
+        function fillResults(songs) {
+            if (songs.length === 0) {
+                fillResultsWithText("No songs found.", null)
+                return;
+            }
+            const resultsDiv = document.getElementById("results");
+            resultsDiv.style.color = null;
             resultsDiv.innerHTML = null;
             for (const song of songs) {
                 const widget = document.createElement("div");
                 widget.className = "result"
                 const thumbnail = document.createElement("img");
-                thumbnail.src = song.thumbnail;
+                thumbnail.src = `http://i.ytimg.com/vi/${song.id}/maxresdefault.jpg`;
                 thumbnail.className = "thumbnail";
+                const thumbnailDiv = document.createElement("div");
+                thumbnailDiv.className = "thumbnaildiv";
+                thumbnailDiv.appendChild(thumbnail);
                 const title = document.createElement("div");
                 title.textContent = song.title;
                 title.className = "title";
@@ -146,7 +167,7 @@
                 titleAndArtist.className = "title-and-artist";
                 titleAndArtist.appendChild(title);
                 titleAndArtist.appendChild(artist);
-                widget.appendChild(thumbnail);
+                widget.appendChild(thumbnailDiv);
                 widget.appendChild(titleAndArtist);
                 widget.addEventListener("click", makeSongClickHandler(song.id))
                 resultsDiv.appendChild(widget);
@@ -155,14 +176,25 @@
 
         async function search() {
             try {
-                const query = document.getElementById("searchquery").value;
+                const query = document.getElementById("searchquery").value.trim();
+                if (query.length === 0) {
+                    return;
+                }
+                fillResultsWithText(`Searching for "${query}"...`, "#888")
                 const response = await fetch("/ytapi/search?query=" + encodeURIComponent(query));
                 const songs = await response.json();
                 fillResults(songs)
             } catch (error) {
                 console.log("failed to search: ", error)
+                fillResultsWithText("Error: Searching for songs failed: " + error, "red")
             }
         }
+
+        document.getElementById("searchquery").addEventListener("keyup", async function (e) {
+            if (e.key === "Enter" || e.keyCode === 13) {
+                await search();
+            }
+        });
 
         document.getElementById("searchbtn").addEventListener("click", search)
     </script>
