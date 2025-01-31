@@ -11,6 +11,7 @@ image = "0.25.5"
 libmpv2 = "4.1.0"
 log = "0.4.22"
 qrcode = "0.14.1"
+rand = "0.9.0"
 raylib = "5.0.2"
 reqwest = { version = "0.12.9", features = ["blocking", "json"] }
 serde = { version = "1.0.216", features = ["derive"] }

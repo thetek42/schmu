@@ -5,6 +5,7 @@ use std::io::BufRead;
 use std::sync::mpsc;
 
 use clap::Parser;
+use rand::seq::SliceRandom;
 
 use crate::cli::Cli;
 use crate::connection::Connection;
@@ -27,12 +28,15 @@ fn main() {
     let cli = Cli::parse();
 
     let fallback_playlist: Option<Vec<String>> = cli.fallback_playlist.map(|path| {
-        fs::read(path)
+        let mut ids: Vec<String> = fs::read(path)
             .expect("failed to read fallback playlist file")
             .lines()
             .map(|s| s.unwrap())
             .filter(|s| s.len() == 11)
-            .collect()
+            .collect();
+        let mut rng = rand::rng();
+        ids.shuffle(&mut rng);
+        ids
     });
 
     let (event_tx, event_rx) = mpsc::channel();
