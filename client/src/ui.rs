@@ -128,6 +128,9 @@ fn ui(
 
     let mut thumbnails = ThumbnailStore::new(&mut rl, &thread);
 
+    let mut qr_contrast: u8 = 105;
+    let mut qr_size: u8 = 6;
+
     /* user interface *****************************************************************************/
 
     while !rl.window_should_close() {
@@ -160,6 +163,10 @@ fn ui(
         match rl.get_key_pressed() {
             Some(KeyboardKey::KEY_N) => event_tx.send(Event::NextSong).unwrap(),
             Some(KeyboardKey::KEY_SPACE) => event_tx.send(Event::TogglePause).unwrap(),
+            Some(KeyboardKey::KEY_Q) => qr_contrast = qr_contrast.saturating_sub(10),
+            Some(KeyboardKey::KEY_W) => qr_contrast = qr_contrast.saturating_add(10),
+            Some(KeyboardKey::KEY_A) => qr_size = qr_size.saturating_sub(1).max(1),
+            Some(KeyboardKey::KEY_S) => qr_size = qr_size.saturating_add(1),
             _ => (),
         }
 
@@ -380,6 +387,8 @@ fn ui(
             ConnectionState::Connected { id } => {
                 let url = util::submission_url(id, &server_address, server_port);
 
+                let qr_color = Color::new(qr_contrast, qr_contrast, qr_contrast, 255);
+
                 let text_width = font_bold.measure_text(&url, FONT_SIZE_BOLD as f32, 0.0).x as i32;
                 let x = screen_width - text_width - 20;
                 let y = screen_height - FONT_SIZE_BOLD - 20;
@@ -389,11 +398,11 @@ fn ui(
                     rvec2(x, y),
                     FONT_SIZE_BOLD as f32,
                     0.0,
-                    Color::DIMGRAY,
+                    qr_color,
                 );
 
                 let qr = server_qrcode.as_ref().unwrap();
-                let size = 29 * 6;
+                let size = 29 * (qr_size as i32);
                 let x = screen_width - size - 20;
                 let y = screen_height - size - 55;
                 d.draw_texture_pro(
@@ -402,7 +411,7 @@ fn ui(
                     rrect(x, y, size, size),
                     rvec2(0, 0),
                     0.0,
-                    Color::DIMGRAY,
+                    qr_color,
                 );
             }
             ConnectionState::Error { msg } => {
