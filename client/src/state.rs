@@ -115,6 +115,59 @@ impl State {
     pub fn connection_state(&self) -> &ConnectionState {
         &self.connection
     }
+
+    // index = 1 -> queue[0]
+    // index = queue.len() + 1 -> fallback_queue[0]
+    pub fn delete_song(&mut self, index: usize) {
+        if index <= self.queue.len() {
+            self.queue.remove(index - 1);
+        } else {
+            self.fallback_queue.remove(index - self.queue.len() - 1);
+        }
+    }
+
+    // index = 1 -> queue[0]
+    // index = queue.len() + 1 -> fallback_queue[0]
+    pub fn move_down(&mut self, index: usize) -> usize {
+        let last_queue_elem = self.queue.len();
+        let last_fallback_queue_elem = self.queue.len() + self.fallback_queue.len();
+        if index == 0 {
+            0
+        } else if index < last_queue_elem {
+            self.queue.swap(index, index - 1);
+            index + 1
+        } else if index == last_queue_elem {
+            index
+        } else if index < last_fallback_queue_elem {
+            self.fallback_queue
+                .swap(index - last_queue_elem, index - last_queue_elem - 1);
+            index + 1
+        } else {
+            index
+        }
+    }
+
+    // index = 1 -> queue[0]
+    // index = queue.len() + 1 -> fallback_queue[0]
+    pub fn move_up(&mut self, index: usize) -> usize {
+        let last_queue_elem = self.queue.len();
+        let first_fallback_queue_elem = self.queue.len() + 1;
+        let last_fallback_queue_elem = self.queue.len() + self.fallback_queue.len();
+        if index == 0 || index == 1 {
+            index
+        } else if index < first_fallback_queue_elem {
+            self.queue.swap(index - 1, index - 2);
+            index - 1
+        } else if index == first_fallback_queue_elem {
+            index
+        } else if index <= last_fallback_queue_elem {
+            self.fallback_queue
+                .swap(index - last_queue_elem - 1, index - last_queue_elem - 2);
+            index - 1
+        } else {
+            index
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]

@@ -65,6 +65,8 @@ fn ui(
 ) {
     let _closed_tx_guard = CallOnDrop::new(|| event_tx.send(Event::UIQuit));
 
+    let mut queue_edit_mode: Option<usize> = None;
+
     /* raylib initialisation **********************************************************************/
 
     let (mut rl, thread) = raylib::init()
@@ -160,14 +162,51 @@ fn ui(
 
         /* keypress handling **********************************************************************/
 
-        match rl.get_key_pressed() {
-            Some(KeyboardKey::KEY_N) => event_tx.send(Event::NextSong).unwrap(),
-            Some(KeyboardKey::KEY_SPACE) => event_tx.send(Event::TogglePause).unwrap(),
-            Some(KeyboardKey::KEY_Q) => qr_contrast = qr_contrast.saturating_sub(10),
-            Some(KeyboardKey::KEY_W) => qr_contrast = qr_contrast.saturating_add(10),
-            Some(KeyboardKey::KEY_A) => qr_size = qr_size.saturating_sub(1).max(1),
-            Some(KeyboardKey::KEY_S) => qr_size = qr_size.saturating_add(1),
-            _ => (),
+        if let Some(edit_index) = queue_edit_mode {
+            match rl.get_key_pressed() {
+                Some(KeyboardKey::KEY_ESCAPE) => queue_edit_mode = None,
+                Some(KeyboardKey::KEY_D) => {
+                    state::get().delete_song(edit_index);
+                    queue_edit_mode = None;
+                }
+                Some(KeyboardKey::KEY_J) => {
+                    let new_index = state::get().move_down(edit_index);
+                    queue_edit_mode = Some(new_index);
+                }
+                Some(KeyboardKey::KEY_K) => {
+                    let new_index = state::get().move_up(edit_index);
+                    queue_edit_mode = Some(new_index);
+                }
+                Some(KeyboardKey::KEY_ONE) => queue_edit_mode = Some(1),
+                Some(KeyboardKey::KEY_TWO) => queue_edit_mode = Some(2),
+                Some(KeyboardKey::KEY_THREE) => queue_edit_mode = Some(3),
+                Some(KeyboardKey::KEY_FOUR) => queue_edit_mode = Some(4),
+                Some(KeyboardKey::KEY_FIVE) => queue_edit_mode = Some(5),
+                Some(KeyboardKey::KEY_SIX) => queue_edit_mode = Some(6),
+                Some(KeyboardKey::KEY_SEVEN) => queue_edit_mode = Some(7),
+                Some(KeyboardKey::KEY_EIGHT) => queue_edit_mode = Some(8),
+                Some(KeyboardKey::KEY_NINE) => queue_edit_mode = Some(9),
+                _ => (),
+            }
+        } else {
+            match rl.get_key_pressed() {
+                Some(KeyboardKey::KEY_N) => event_tx.send(Event::NextSong).unwrap(),
+                Some(KeyboardKey::KEY_SPACE) => event_tx.send(Event::TogglePause).unwrap(),
+                Some(KeyboardKey::KEY_Q) => qr_contrast = qr_contrast.saturating_sub(10),
+                Some(KeyboardKey::KEY_W) => qr_contrast = qr_contrast.saturating_add(10),
+                Some(KeyboardKey::KEY_A) => qr_size = qr_size.saturating_sub(1).max(1),
+                Some(KeyboardKey::KEY_S) => qr_size = qr_size.saturating_add(1),
+                Some(KeyboardKey::KEY_ONE) => queue_edit_mode = Some(1),
+                Some(KeyboardKey::KEY_TWO) => queue_edit_mode = Some(2),
+                Some(KeyboardKey::KEY_THREE) => queue_edit_mode = Some(3),
+                Some(KeyboardKey::KEY_FOUR) => queue_edit_mode = Some(4),
+                Some(KeyboardKey::KEY_FIVE) => queue_edit_mode = Some(5),
+                Some(KeyboardKey::KEY_SIX) => queue_edit_mode = Some(6),
+                Some(KeyboardKey::KEY_SEVEN) => queue_edit_mode = Some(7),
+                Some(KeyboardKey::KEY_EIGHT) => queue_edit_mode = Some(8),
+                Some(KeyboardKey::KEY_NINE) => queue_edit_mode = Some(9),
+                _ => (),
+            }
         }
 
         let mut d = rl.begin_drawing(&thread);
@@ -227,6 +266,7 @@ fn ui(
         let state = state::get();
         let mut queue = state.queue();
         let mut y = 360.0;
+        let mut song_index = 0;
 
         if !state.has_song_suggestions() {
             d.draw_text_ex(
@@ -250,6 +290,8 @@ fn ui(
         }
 
         for song in &mut queue {
+            song_index += 1;
+
             let thumbnail = thumbnails.get(&song.id);
             draw_thumbnail(100, y as i32, 64, thumbnail, &mut d);
 
@@ -291,6 +333,19 @@ fn ui(
                 Color::GRAY,
             );
 
+            if let Some(edit_index) = queue_edit_mode
+                && edit_index == song_index
+            {
+                d.draw_text_ex(
+                    &font_bold,
+                    ">",
+                    rvec2(70, y + 21.0),
+                    FONT_SIZE_BOLD as f32,
+                    0.0,
+                    Color::new(50, 50, 50, 255),
+                );
+            }
+
             y += 80.0;
 
             if y as i32 > screen_height - 160 {
@@ -309,7 +364,7 @@ fn ui(
                 0.0,
                 Color::DIMGRAY,
             );
-        } else if state.has_fallback_queue() {
+        } else if state.has_fallback_queue() && y as i32 <= screen_height - 220 {
             /* fallback queue *********************************************************************/
 
             let msg = match state.has_song_suggestions() {
@@ -331,6 +386,8 @@ fn ui(
             let mut fallback_queue = state.fallback_queue();
 
             for song in &mut fallback_queue {
+                song_index += 1;
+
                 let thumbnail = thumbnails.get(&song.id);
                 draw_thumbnail(100, y as i32, 64, thumbnail, &mut d);
 
@@ -372,6 +429,19 @@ fn ui(
                     Color::GRAY,
                 );
 
+                if let Some(edit_index) = queue_edit_mode
+                    && edit_index == song_index
+                {
+                    d.draw_text_ex(
+                        &font_bold,
+                        ">",
+                        rvec2(70, y + 21.0),
+                        FONT_SIZE_BOLD as f32,
+                        0.0,
+                        Color::new(50, 50, 50, 255),
+                    );
+                }
+
                 y += 80.0;
 
                 if y as i32 > screen_height - 160 {
@@ -391,6 +461,12 @@ fn ui(
                     Color::DIMGRAY,
                 );
             }
+        }
+
+        if let Some(edit_index) = queue_edit_mode
+            && edit_index > song_index
+        {
+            queue_edit_mode = None;
         }
 
         /* connection status **********************************************************************/
