@@ -37,6 +37,10 @@ impl State {
         self.fallback_queue.iter()
     }
 
+    pub fn has_song_suggestions(&self) -> bool {
+        self.queue.len() > 0
+    }
+
     pub fn has_fallback_queue(&self) -> bool {
         self.fallback_queue.len() > 0
     }

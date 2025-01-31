@@ -228,6 +228,27 @@ fn ui(
         let mut queue = state.queue();
         let mut y = 360.0;
 
+        if !state.has_song_suggestions() {
+            d.draw_text_ex(
+                &font_bold,
+                &format!("No song suggestions queued!"),
+                rvec2(100, y),
+                FONT_SIZE_BOLD as f32,
+                0.0,
+                Color::DIMGRAY,
+            );
+            y += 24.0;
+            d.draw_text_ex(
+                &font_bold,
+                &format!("Scan the QR code to suggest a song."),
+                rvec2(100, y),
+                FONT_SIZE_BOLD as f32,
+                0.0,
+                Color::DIMGRAY,
+            );
+            y += 32.0;
+        }
+
         for song in &mut queue {
             let thumbnail = thumbnails.get(&song.id);
             draw_thumbnail(100, y as i32, 64, thumbnail, &mut d);
@@ -291,10 +312,15 @@ fn ui(
         } else if state.has_fallback_queue() {
             /* fallback queue *********************************************************************/
 
+            let msg = match state.has_song_suggestions() {
+                true => "Fallback Queue (will be played when suggestions run out):",
+                false => "Fallback Queue:",
+            };
+
             y += 32.0;
             d.draw_text_ex(
                 &font_bold,
-                &format!("Fallback Queue (will be played when suggestions run out):"),
+                msg,
                 rvec2(100, y),
                 FONT_SIZE_BOLD as f32,
                 0.0,
