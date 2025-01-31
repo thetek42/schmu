@@ -231,7 +231,7 @@ fn ui(
         if !state.has_song_suggestions() {
             d.draw_text_ex(
                 &font_bold,
-                &format!("No song suggestions queued!"),
+                "No song suggestions queued!",
                 rvec2(100, y),
                 FONT_SIZE_BOLD as f32,
                 0.0,
@@ -240,7 +240,7 @@ fn ui(
             y += 24.0;
             d.draw_text_ex(
                 &font_bold,
-                &format!("Scan the QR code to suggest a song."),
+                "Scan the QR code to suggest a song.",
                 rvec2(100, y),
                 FONT_SIZE_BOLD as f32,
                 0.0,

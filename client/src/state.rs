@@ -38,11 +38,11 @@ impl State {
     }
 
     pub fn has_song_suggestions(&self) -> bool {
-        self.queue.len() > 0
+        !self.queue.is_empty()
     }
 
     pub fn has_fallback_queue(&self) -> bool {
-        self.fallback_queue.len() > 0
+        !self.fallback_queue.is_empty()
     }
 
     pub fn enqueue(&mut self, song: Song, is_fallback: bool) {
