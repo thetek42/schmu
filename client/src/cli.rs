@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::Parser;
 
 #[derive(Parser)]
@@ -13,4 +15,9 @@ pub struct Cli {
     /// The port of the Schmu server
     #[arg(long, short = 'P', default_value_t = shared::consts::SERVER_PORT_PUBLIC)]
     pub server_port: u16,
+
+    /// Path to the fallback playlist file. This file should contain one YouTube
+    /// video ID per line.
+    #[arg(long, short = 'f')]
+    pub fallback_playlist: Option<PathBuf>,
 }

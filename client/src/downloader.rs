@@ -24,12 +24,13 @@ pub struct Downloader {
 }
 
 impl Downloader {
-    pub fn start() -> Self {
+    pub fn start(fallback_playlist: Option<Vec<String>>) -> Self {
         let (info_tx, info_rx) = mpsc::channel();
         let (audio_tx, audio_rx) = mpsc::channel();
 
         log::info!("starting downloader");
-        let info_thread = thread::spawn(move || InfoDownloaderThread::run(info_rx, audio_tx));
+        let info_thread =
+            thread::spawn(move || InfoDownloaderThread::run(info_rx, audio_tx, fallback_playlist));
         let audio_thread = thread::spawn(move || AudioDownloaderThread::run(audio_rx));
 
         Self {
@@ -42,7 +43,10 @@ impl Downloader {
     pub fn enqueue(&self, id: &str) {
         log::info!("enqueueing download for {id}");
         let id = id.to_owned();
-        let msg = Message::Download { id };
+        let msg = Message::Download {
+            id,
+            is_fallback: false, // don't care
+        };
         self.info_tx.send(msg).unwrap();
     }
 
@@ -71,15 +75,27 @@ struct InfoDownloaderThread {
     info_rx: Receiver<Message>,
     audio_tx: Sender<Message>,
     queue: VecDeque<DownloadEntry>,
+    fallback_queue: VecDeque<DownloadEntry>,
 }
 
 impl InfoDownloaderThread {
     const DOWNLOAD_ATTEMPTS: usize = 3;
 
-    fn run(info_rx: Receiver<Message>, audio_tx: Sender<Message>) {
+    fn run(
+        info_rx: Receiver<Message>,
+        audio_tx: Sender<Message>,
+        fallback_playlist: Option<Vec<String>>,
+    ) {
+        let fallback_queue = fallback_playlist
+            .unwrap_or_default()
+            .into_iter()
+            .map(|id| DownloadEntry { id, tries_left: 5 })
+            .collect::<VecDeque<_>>();
+
         let mut downloader = Self {
             info_rx,
             audio_tx,
+            fallback_queue,
             queue: VecDeque::new(),
         };
 
@@ -89,9 +105,9 @@ impl InfoDownloaderThread {
     }
 
     fn run_iter(&mut self) -> bool {
-        if self.queue.is_empty() {
+        if self.queue.is_empty() && self.fallback_queue.is_empty() {
             match self.info_rx.recv() {
-                Ok(Message::Download { id }) => self.enqueue(id),
+                Ok(Message::Download { id, .. }) => self.enqueue(id),
                 Ok(Message::Quit) => return false,
                 Err(_) => return false,
             }
@@ -99,17 +115,23 @@ impl InfoDownloaderThread {
 
         loop {
             match self.info_rx.try_recv() {
-                Ok(Message::Download { id }) => self.enqueue(id),
+                Ok(Message::Download { id, .. }) => self.enqueue(id),
                 Ok(Message::Quit) => return false,
                 Err(TryRecvError::Disconnected) => return false,
                 Err(TryRecvError::Empty) => break,
             }
         }
 
-        let entry = self.dequeue().unwrap();
+        let (entry, is_fallback) = self.dequeue().unwrap();
+
+        match is_fallback {
+            false => log::info!("processing {}", entry.id),
+            true => log::info!("processing {} (fallback)", entry.id),
+        }
+
         if entry.is_cached() {
             log::info!("file {} in cache, skipping download", entry.id);
-            match self.add_to_state_queue_from_cache(&entry) {
+            match self.add_to_state_queue_from_cache(&entry, is_fallback) {
                 Ok(()) => return true,
                 Err(e) => log::error!("failed to read song info of {} from cache: {e}", entry.id),
             }
@@ -128,9 +150,12 @@ impl InfoDownloaderThread {
             log::warn!("failed to save song info for {} to cache: {e}", entry.id);
         };
 
-        self.add_to_state_queue(song_info);
+        self.add_to_state_queue(song_info, is_fallback);
         self.audio_tx
-            .send(Message::Download { id: entry.id })
+            .send(Message::Download {
+                id: entry.id,
+                is_fallback,
+            })
             .unwrap();
 
         true
@@ -143,8 +168,12 @@ impl InfoDownloaderThread {
         });
     }
 
-    fn dequeue(&mut self) -> Option<DownloadEntry> {
-        self.queue.pop_front()
+    // returns Option<(entry, is_fallback)>
+    fn dequeue(&mut self) -> Option<(DownloadEntry, bool)> {
+        match self.queue.pop_front() {
+            Some(entry) => Some((entry, false)),
+            None => self.fallback_queue.pop_front().zip(Some(true)),
+        }
     }
 
     fn requeue(&mut self, entry: DownloadEntry) {
@@ -204,17 +233,21 @@ impl InfoDownloaderThread {
         })
     }
 
-    fn add_to_state_queue(&self, song_info: Song) {
+    fn add_to_state_queue(&self, song_info: Song, is_fallback: bool) {
         let mut state = state::get();
-        state.enqueue(song_info);
+        state.enqueue(song_info, is_fallback);
     }
 
-    fn add_to_state_queue_from_cache(&self, entry: &DownloadEntry) -> Result<()> {
+    fn add_to_state_queue_from_cache(
+        &self,
+        entry: &DownloadEntry,
+        is_fallback: bool,
+    ) -> Result<()> {
         let path = entry.song_info_cache_location();
         let data = fs::read(path)?;
         let mut song_info = serde_json::from_slice::<Song>(&data)?;
         song_info.downloaded = true; // ok because if song is not downloaded, we re-fetch the song info
-        self.add_to_state_queue(song_info);
+        self.add_to_state_queue(song_info, is_fallback);
         Ok(())
     }
 
@@ -239,6 +272,7 @@ struct YoutubeVideoResponse {
 struct AudioDownloaderThread {
     rx: Receiver<Message>,
     queue: VecDeque<DownloadEntry>,
+    fallback_queue: VecDeque<DownloadEntry>,
 }
 
 impl AudioDownloaderThread {
@@ -248,6 +282,7 @@ impl AudioDownloaderThread {
         let mut downloader = Self {
             rx,
             queue: VecDeque::new(),
+            fallback_queue: VecDeque::new(),
         };
 
         while downloader.run_iter() {}
@@ -256,7 +291,7 @@ impl AudioDownloaderThread {
     fn run_iter(&mut self) -> bool {
         if self.queue.is_empty() {
             match self.rx.recv() {
-                Ok(Message::Download { id }) => self.enqueue(id),
+                Ok(Message::Download { id, is_fallback }) => self.enqueue(id, is_fallback),
                 Ok(Message::Quit) => return false,
                 Err(_) => return false,
             }
@@ -264,7 +299,7 @@ impl AudioDownloaderThread {
 
         loop {
             match self.rx.try_recv() {
-                Ok(Message::Download { id }) => self.enqueue(id),
+                Ok(Message::Download { id, is_fallback }) => self.enqueue(id, is_fallback),
                 Ok(Message::Quit) => return false,
                 Err(TryRecvError::Disconnected) => return false,
                 Err(TryRecvError::Empty) => break,
@@ -280,15 +315,20 @@ impl AudioDownloaderThread {
         self.download(entry)
     }
 
-    fn enqueue(&mut self, id: String) {
-        self.queue.push_back(DownloadEntry {
+    fn enqueue(&mut self, id: String, is_fallback: bool) {
+        let queue = match is_fallback {
+            false => &mut self.queue,
+            true => &mut self.fallback_queue,
+        };
+
+        queue.push_back(DownloadEntry {
             id,
             tries_left: Self::DOWNLOAD_ATTEMPTS,
         });
     }
 
     fn dequeue(&mut self) -> Option<DownloadEntry> {
-        self.queue.pop_front()
+        self.queue.pop_front().or(self.fallback_queue.pop_front())
     }
 
     fn requeue(&mut self, entry: DownloadEntry) {
@@ -333,7 +373,7 @@ impl AudioDownloaderThread {
                     return true;
                 }
                 Ok(None) => match self.rx.try_recv() {
-                    Ok(Message::Download { id }) => self.enqueue(id),
+                    Ok(Message::Download { id, is_fallback }) => self.enqueue(id, is_fallback),
                     Ok(Message::Quit) | Err(TryRecvError::Disconnected) => {
                         _ = command.kill();
                         return false;
@@ -366,7 +406,7 @@ impl AudioDownloaderThread {
 /* utilities **************************************************************************************/
 
 enum Message {
-    Download { id: String },
+    Download { id: String, is_fallback: bool },
     Quit,
 }
 

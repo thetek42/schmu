@@ -281,6 +281,83 @@ fn ui(
                 0.0,
                 Color::DIMGRAY,
             );
+        } else if state.has_fallback_queue() {
+            /* fallback queue *********************************************************************/
+
+            y += 32.0;
+            d.draw_text_ex(
+                &font_bold,
+                &format!("Fallback Queue (will be played when suggestions run out):"),
+                rvec2(100, y),
+                FONT_SIZE_BOLD as f32,
+                0.0,
+                Color::DIMGRAY,
+            );
+            y += 36.0;
+
+            let mut fallback_queue = state.fallback_queue();
+
+            for song in &mut fallback_queue {
+                let thumbnail = thumbnails.get(&song.id);
+                draw_thumbnail(100, y as i32, 64, thumbnail, &mut d);
+
+                d.draw_text_ex(
+                    &font_regular,
+                    &song.title,
+                    rvec2(180, y + 4.0),
+                    FONT_SIZE_REGULAR as f32,
+                    0.0,
+                    Color::GAINSBORO,
+                );
+
+                if !song.downloaded {
+                    let rotation = ((time % 1.0) * 360.0) as f32;
+                    let texture_rect = rrect(0, 0, spinner.width(), spinner.height());
+                    let output_rect = rrect(190, y + 46.0, 20, 20);
+                    let origin = rvec2(10, 10);
+                    d.draw_texture_pro(
+                        &spinner,
+                        texture_rect,
+                        output_rect,
+                        origin,
+                        rotation,
+                        Color::GRAY,
+                    );
+                }
+
+                let offset = match song.downloaded {
+                    true => 0.0,
+                    false => 24.0,
+                };
+
+                d.draw_text_ex(
+                    &font_bold,
+                    &song.artist,
+                    rvec2(181.0 + offset, y + 36.0),
+                    FONT_SIZE_BOLD as f32,
+                    0.0,
+                    Color::GRAY,
+                );
+
+                y += 80.0;
+
+                if y as i32 > screen_height - 160 {
+                    break;
+                }
+            }
+
+            let remaining = fallback_queue.count();
+            if remaining > 0 {
+                let plural = if remaining == 1 { "" } else { "s" };
+                d.draw_text_ex(
+                    &font_bold,
+                    &format!("{remaining} more song{plural} in fallback queue"),
+                    rvec2(100, y),
+                    FONT_SIZE_BOLD as f32,
+                    0.0,
+                    Color::DIMGRAY,
+                );
+            }
         }
 
         /* connection status **********************************************************************/
@@ -366,7 +443,14 @@ impl ThumbnailStore {
     }
 
     fn fetch(&mut self, rl: &mut RaylibHandle, thread: &RaylibThread) {
-        for song in state::get().queue() {
+        let state = state::get();
+        for song in state
+            .playing()
+            .map(|playing| &playing.song)
+            .into_iter()
+            .chain(state.queue())
+            .chain(state.fallback_queue())
+        {
             if let Entry::Vacant(entry) = self.thumbnails.entry(song.id.to_owned()) {
                 let image = Image::load_image_from_mem(".png", &song.thumbnail).unwrap();
                 let mut texture = rl.load_texture_from_image(thread, &image).unwrap();

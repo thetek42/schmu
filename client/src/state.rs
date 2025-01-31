@@ -14,6 +14,7 @@ pub fn get() -> MutexGuard<'static, State> {
 
 pub struct State {
     queue: VecDeque<Song>,
+    fallback_queue: VecDeque<Song>,
     playing: Option<PlayingSong>,
     connection: ConnectionState,
 }
@@ -22,6 +23,7 @@ impl State {
     const fn new() -> Self {
         Self {
             queue: VecDeque::new(),
+            fallback_queue: VecDeque::new(),
             playing: None,
             connection: ConnectionState::NotConnected,
         }
@@ -31,7 +33,15 @@ impl State {
         self.queue.iter()
     }
 
-    pub fn enqueue(&mut self, song: Song) {
+    pub fn fallback_queue(&self) -> Iter<'_, Song> {
+        self.fallback_queue.iter()
+    }
+
+    pub fn has_fallback_queue(&self) -> bool {
+        self.fallback_queue.len() > 0
+    }
+
+    pub fn enqueue(&mut self, song: Song, is_fallback: bool) {
         if let Some(ref playing) = self.playing
             && playing.song.id == song.id
         {
@@ -42,11 +52,19 @@ impl State {
             return;
         }
 
-        self.queue.push_back(song);
+        let queue = match is_fallback {
+            false => &mut self.queue,
+            true => &mut self.fallback_queue,
+        };
+
+        queue.push_back(song);
     }
 
     pub fn mark_downloaded(&mut self, id: &str) {
         if let Some(ref mut item) = self.queue.iter_mut().find(|item| item.id == id) {
+            item.downloaded = true;
+        }
+        if let Some(ref mut item) = self.fallback_queue.iter_mut().find(|item| item.id == id) {
             item.downloaded = true;
         }
     }
@@ -63,11 +81,16 @@ impl State {
     }
 
     pub fn get_next_song(&mut self) -> Option<String> {
-        let Some(index) = self.queue.iter().position(|item| item.downloaded) else {
-            self.playing = None;
-            return None;
+        let song = match self.queue.iter().position(|item| item.downloaded) {
+            Some(index) => self.queue.remove(index).unwrap(),
+            None => match self.fallback_queue.iter().position(|item| item.downloaded) {
+                Some(index) => self.fallback_queue.remove(index).unwrap(),
+                None => {
+                    self.playing = None;
+                    return None;
+                }
+            },
         };
-        let song = self.queue.remove(index).unwrap();
         let id = song.id.clone();
         self.playing = Some(PlayingSong {
             song,

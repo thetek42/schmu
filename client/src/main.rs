@@ -1,5 +1,7 @@
 #![feature(let_chains)]
 
+use std::fs;
+use std::io::BufRead;
 use std::sync::mpsc;
 
 use clap::Parser;
@@ -24,6 +26,15 @@ fn main() {
 
     let cli = Cli::parse();
 
+    let fallback_playlist: Option<Vec<String>> = cli.fallback_playlist.map(|path| {
+        fs::read(path)
+            .expect("failed to read fallback playlist file")
+            .lines()
+            .map(|s| s.unwrap())
+            .filter(|s| s.len() == 11)
+            .collect()
+    });
+
     let (event_tx, event_rx) = mpsc::channel();
 
     let _connection = Connection::start(
@@ -34,7 +45,7 @@ fn main() {
     );
 
     let _ui = UI::start(event_tx, cli.server_address, cli.server_port);
-    let downloader = Downloader::start();
+    let downloader = Downloader::start(fallback_playlist);
     let player = Player::start();
 
     //downloader.enqueue("YBdyc1WDlBQ");
