@@ -77,7 +77,7 @@ fn ui(
     rl.set_exit_key(None);
     rl.set_target_fps(get_monitor_refresh_rate(get_current_monitor()) as u32);
 
-    let charset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~äöüÄÖÜßẞ";
+    let charset = " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~äöüÄÖÜßẞÀÁÂÃÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕØÙÚÛÝÞàáâãåæçèéêëìíîïðñòóôõøùúûýþÿ";
 
     let font_regular = rl
         .load_font_from_memory(
