@@ -1,5 +1,3 @@
-#![feature(let_chains)]
-
 use std::fs;
 use std::io::BufRead;
 use std::sync::mpsc;
